@@ -1140,14 +1140,24 @@ PCODE DynamicHelpers::CreateHelperWithTwoArgs(LoaderAllocator * pAllocator, TADD
     END_DYNAMIC_HELPER_EMIT();
 }
 
-PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator, CORINFO_RUNTIME_LOOKUP * pLookup)
+PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator, CORINFO_RUNTIME_LOOKUP * pLookup, DWORD dictionaryIndexAndSlot)
 {
     STANDARD_VM_CONTRACT;
 
     // It's available only via the run-time helper function
     if (pLookup->indirections == CORINFO_USEHELPER)
     {
-        BEGIN_DYNAMIC_HELPER_EMIT(15);
+        BEGIN_DYNAMIC_HELPER_EMIT(22);
+
+#ifdef UNIX_AMD64_ABI
+        // dictionary index and slot as 3rd parameter
+        *(UINT32*)p = 0x00c2c748; p += 3;   // mov rdx,<slot>
+        *(UINT32*)p = dictionaryIndexAndSlot; p += 4;
+#else
+        // dictionary index and slot as 3rd parameter
+        *(UINT32*)p = 0x00c0c749; p += 3;   // mov r8,<slot>
+        *(UINT32*)p = dictionaryIndexAndSlot; p += 4;
+#endif
 
         // rcx/rdi contains the generic context parameter
         // mov rdx/rsi,pLookup->signature
@@ -1162,7 +1172,7 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
         for (WORD i = 0; i < pLookup->indirections; i++)
             indirectionsSize += (pLookup->offsets[i] >= 0x80 ? 7 : 4);
 
-        int codeSize = indirectionsSize + (pLookup->testForNull ? 30 : 4);
+        int codeSize = indirectionsSize + (pLookup->testForNull ? 37 : 4);
 
         BEGIN_DYNAMIC_HELPER_EMIT(codeSize);
 
@@ -1242,10 +1252,19 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
             // 'HELPER_CALL'
             {
                 // Put the generic context back into rcx (was previously saved in rax)
+                // Put the dictionary slot index into the 3rd argument register
 #ifdef UNIX_AMD64_ABI
                 *(UINT32*)p = 0x00c78948; p += 3;   // mov rdi,rax
+
+                // dictionary index and slot as 3rd parameter
+                *(UINT32*)p = 0x00c2c748; p += 3;   // mov rdx,<slot>
+                *(UINT32*)p = dictionaryIndexAndSlot; p += 4;
 #else
                 *(UINT32*)p = 0x00c18948; p += 3;   // mov rcx,rax
+
+                // dictionary index and slot as 3rd parameter
+                *(UINT32*)p = 0x00c0c749; p += 3;   // mov r8,<slot>
+                *(UINT32*)p = dictionaryIndexAndSlot; p += 4;
 #endif
 
                 // mov rdx,pLookup->signature
