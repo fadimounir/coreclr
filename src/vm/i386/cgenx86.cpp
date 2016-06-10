@@ -2153,14 +2153,20 @@ PCODE DynamicHelpers::CreateHelperWithTwoArgs(LoaderAllocator * pAllocator, TADD
     END_DYNAMIC_HELPER_EMIT();
 }
 
-PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator, CORINFO_RUNTIME_LOOKUP * pLookup)
+PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator, CORINFO_RUNTIME_LOOKUP * pLookup, DWORD dictionaryIndexAndSlot)
 {
     STANDARD_VM_CONTRACT;
 
     // It's available only via the run-time helper function
     if (pLookup->indirections == CORINFO_USEHELPER)
     {
-        BEGIN_DYNAMIC_HELPER_EMIT(10);
+        BEGIN_DYNAMIC_HELPER_EMIT(17);
+
+        // dictionary index and slot as 3rd parameter (pushed on stack)
+        *p++ = 0x58;        // pop eax
+        *p++ = 0x68;        // push <slot>
+        *(UINT32*)p = dictionaryIndexAndSlot; p += 4;
+        *p++ = 0x50;        // push eax
 
         // ecx contains the generic context parameter
         // mov edx,pLookup->signature
@@ -2175,7 +2181,7 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
         for (WORD i = 0; i < pLookup->indirections; i++)
             indirectionsSize += (pLookup->offsets[i] >= 0x80 ? 6 : 3);
 
-        int codeSize = indirectionsSize + (pLookup->testForNull ? 21 : 3);
+        int codeSize = indirectionsSize + (pLookup->testForNull ? 28 : 3);
 
         BEGIN_DYNAMIC_HELPER_EMIT(codeSize);
 
@@ -2231,6 +2237,12 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
                 // Put the generic context back into rcx (was previously saved in eax)
                 // mov ecx,eax
                 *(UINT16*)p = 0xc189; p += 2;
+
+                // dictionary index and slot as 3rd parameter (pushed on stack)
+                *p++ = 0x58;        // pop eax
+                *p++ = 0x68;        // push <slot>
+                *(UINT32*)p = dictionaryIndexAndSlot; p += 4;
+                *p++ = 0x50;        // push eax
 
                 // mov edx,pLookup->signature
                 // jmp pLookup->helper

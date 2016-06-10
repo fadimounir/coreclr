@@ -99,7 +99,18 @@ private:
     WORD m_numSlots;          
 
     // m_numSlots of these
-    DictionaryEntryLayout m_slots[1];   
+    DictionaryEntryLayout m_slots[1];
+
+    static BOOL FindTokenWorker(LoaderAllocator *pAllocator,
+                                DWORD numGenericArgs,
+                                DictionaryLayout *pDictLayout,
+                                CORINFO_RUNTIME_LOOKUP *pResult,
+                                SigBuilder * pSigBuilder,
+                                BYTE * pSig,
+                                DWORD cbSig,
+                                int nFirstOffset,
+                                WORD * pSlotOut);
+
      
 public:
     // Create an initial dictionary layout with a single bucket containing numSlots slots
@@ -115,6 +126,14 @@ public:
                           CORINFO_RUNTIME_LOOKUP *pResult,
                           SigBuilder * pSigBuilder,
                           int nFirstOffset);
+
+    static BOOL FindToken(LoaderAllocator * pAllocator,
+                          DWORD numGenericArgs,
+                          DictionaryLayout * pDictLayout,
+                          CORINFO_RUNTIME_LOOKUP * pResult,
+                          BYTE * signature,
+                          int nFirstOffset,
+                          WORD * pSlotOut);
 
     DWORD GetMaxSlots();
     DWORD GetNumUsedSlots();
@@ -253,7 +272,9 @@ class Dictionary
                                          MethodTable * pMT,
                                          LPVOID signature,
                                          BOOL nonExpansive,
-                                         DictionaryEntry ** ppSlot);
+                                         DictionaryEntry ** ppSlot,
+                                         DWORD dictionaryIndexAndSlot = -1);
+
     void PrepopulateDictionary(MethodDesc * pMD,
                                MethodTable * pMT,
                                BOOL nonExpansive);
