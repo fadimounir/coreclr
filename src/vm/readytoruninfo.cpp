@@ -66,6 +66,27 @@ MethodDesc * ReadyToRunInfo::GetMethodDescForEntryPoint(PCODE entryPoint)
     return dac_cast<PTR_MethodDesc>(val);
 }
 
+BOOL ReadyToRunInfo::IsUniversalCanonicalEntryPoint(PCODE entryPoint)
+{
+    CONTRACTL
+    {
+        GC_NOTRIGGER;
+        NOTHROW;
+        SUPPORTS_DAC;
+    }
+    CONTRACTL_END;
+
+#if defined(_TARGET_AMD64_) || (defined(_TARGET_X86_) && defined(FEATURE_PAL))
+    // A normal method entry point is always 8 byte aligned, but a funclet can start at an odd address.
+    // Since PtrHashMap can't handle odd pointers, check for this case and return FALSE.
+    if ((entryPoint & 0x1) != 0)
+        return FALSE;
+#endif
+
+    TADDR val = (TADDR)m_universalGenericEntryPointsMap.LookupValue(PCODEToPINSTR(entryPoint), (LPVOID)PCODEToPINSTR(entryPoint));
+    return (val != (TADDR)INVALIDENTRY);
+}
+
 BOOL ReadyToRunInfo::HasHashtableOfTypes()
 {
     CONTRACTL
@@ -588,6 +609,7 @@ ReadyToRunInfo::ReadyToRunInfo(Module * pModule, PEImageLayout * pLayout, READYT
     {
         LockOwner lock = {&m_Crst, IsOwnerOfCrst};
         m_entryPointToMethodDescMap.Init(TRUE, &lock);
+        m_universalGenericEntryPointsMap.Init(TRUE, &lock);
     }
 
     // For format version 2.1 and later, there is an optional inlining table 
@@ -681,40 +703,11 @@ static bool SigMatchesMethodDesc(MethodDesc* pMD, SigPointer &sig, Module * pMod
     return true;
 }
 
-uint ReadyToRunInfo::LookupHashtableEntryForGenericMethod(MethodDesc* pMD)
-{
-    uint offset = (uint)-1;
-
-    if (m_instMethodEntryPoints.IsNull())
-        return offset;
-
-    NativeHashtable::Enumerator lookup = m_instMethodEntryPoints.Lookup(GetVersionResilientMethodHashCode(pMD));
-    NativeParser entryParser;
-    while (lookup.GetNext(entryParser))
-    {
-        PCCOR_SIGNATURE pBlob = (PCCOR_SIGNATURE)entryParser.GetBlob();
-        SigPointer sig(pBlob);
-        if (SigMatchesMethodDesc(pMD, sig, m_pModule))
-        {
-            // Get the updated SigPointer location, so we can calculate the size of the blob,
-            // in order to skip the blob and find the entry point data.
-            PCCOR_SIGNATURE pSigNew;
-            DWORD cbSigNew;
-            sig.GetSignature(&pSigNew, &cbSigNew);
-            offset = entryParser.GetOffset() + (uint)(pSigNew - pBlob);
-            break;
-        }
-    }
-
-    return offset;
-}
-
 PCODE ReadyToRunInfo::GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig, BOOL fFixups)
 {
     STANDARD_VM_CONTRACT;
 
     PCODE pEntryPoint = NULL;
-    MethodDesc* pOriginalMD = pMD;
 #ifndef CROSSGEN_COMPILE
 #ifdef PROFILING_SUPPORTED
     BOOL fShouldSearchCache = TRUE;
@@ -725,16 +718,40 @@ PCODE ReadyToRunInfo::GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig
     if (rid == 0)
         goto done;
 
-    uint offset;
+    uint offset = (uint)-1;
+    bool isUSG = false;
+
     if (pMD->HasClassOrMethodInstantiation())
     {
-        offset = LookupHashtableEntryForGenericMethod(pMD);
+        if (!m_instMethodEntryPoints.IsNull())
+        {
+            NativeHashtable::Enumerator lookup = m_instMethodEntryPoints.Lookup(GetVersionResilientMethodHashCode(pMD));
+            NativeParser entryParser;
+            while (lookup.GetNext(entryParser))
+            {
+                PCCOR_SIGNATURE pBlob = (PCCOR_SIGNATURE)entryParser.GetBlob();
+                SigPointer sig(pBlob);
+                if (SigMatchesMethodDesc(pMD, sig, m_pModule))
+                {
+                    // Get the updated SigPointer location, so we can calculate the size of the blob,
+                    // in order to skip the blob and find the entry point data.
+                    PCCOR_SIGNATURE pSigNew;
+                    DWORD cbSigNew;
+                    sig.GetSignature(&pSigNew, &cbSigNew);
+                    offset = entryParser.GetOffset() + (uint)(pSigNew - pBlob);
+                    break;
+                }
+            }
+        }
 
         if (offset == (uint)-1)
         {
-            // Lookup universal canonical entry
-            pMD = pMD->GetUniversalCanonicalMethod();
-            offset = LookupHashtableEntryForGenericMethod(pMD);
+            // Lookup universal canonical entry. Given that there's only one possible instantiation for USG types/methods,
+            // the entry point is stored in the methoddef's table by RID
+            if (m_methodDefEntryPoints.TryGetAt(rid - 1, &offset))
+            {
+                isUSG = true;
+            }
         }
 
         if (offset == (uint)-1)
@@ -800,6 +817,12 @@ PCODE ReadyToRunInfo::GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig
 
         if (m_entryPointToMethodDescMap.LookupValue(PCODEToPINSTR(pEntryPoint), (LPVOID)PCODEToPINSTR(pEntryPoint)) == (LPVOID)INVALIDENTRY)
             m_entryPointToMethodDescMap.InsertValue(PCODEToPINSTR(pEntryPoint), pMD);
+
+        if (isUSG)
+        {
+            if (m_universalGenericEntryPointsMap.LookupValue(PCODEToPINSTR(pEntryPoint), (LPVOID)PCODEToPINSTR(pEntryPoint)) == (LPVOID)INVALIDENTRY)
+                m_universalGenericEntryPointsMap.InsertValue(PCODEToPINSTR(pEntryPoint), (LPVOID)PCODEToPINSTR(pEntryPoint));
+        }
     }
 
 #ifndef CROSSGEN_COMPILE

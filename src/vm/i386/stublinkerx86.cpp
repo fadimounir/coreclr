@@ -3151,7 +3151,7 @@ VOID StubLinkerCPU::EmitUnboxMethodStub(MethodDesc* pUnboxMD)
 #else
     if (pUnboxMD->RequiresInstMethodTableArg())
     {
-        EmitInstantiatingMethodStub(pUnboxMD, NULL);
+        EmitInstantiatingMethodStub(pUnboxMD, NULL, NULL);
         return;
     }
 #endif
@@ -3203,17 +3203,22 @@ VOID StubLinkerCPU::EmitUnboxMethodStub(MethodDesc* pUnboxMD)
 // or * A MethodDesc for a static method in a generic class whose code is shared across instantiations.
 //      In this case, the extra argument is the MethodTable pointer of the instantiated type.
 // or * A MethodDesc for unboxing stub. In this case, the extra argument is null.
-VOID StubLinkerCPU::EmitInstantiatingMethodStub(MethodDesc* pMD, void* extra)
+VOID StubLinkerCPU::EmitInstantiatingMethodStub(MethodDesc* pMD, void* extra, PCODE pTargetUSGCode)
 {
     CONTRACTL
     {
         STANDARD_VM_CHECK;
-        PRECONDITION(pMD->RequiresInstArg());
+        PRECONDITION((pMD->RequiresInstArg() && pTargetUSGCode == NULL) || 
+                     (pMD->MethodShapeRequiresInstArgOnSharedGenericCode() && pTargetUSGCode != NULL));
+        PRECONDITION(pTargetUSGCode == NULL || pMD->GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pTargetUSGCode));
     }
     CONTRACTL_END;
 
     MetaSig msig(pMD);
     ArgIterator argit(&msig);
+
+    if (pTargetUSGCode != NULL)
+        msig.SetHasParamTypeArg();
 
 #ifdef _TARGET_AMD64_
     int paramTypeArgOffset = argit.GetParamTypeArgOffset();
@@ -3305,7 +3310,11 @@ VOID StubLinkerCPU::EmitInstantiatingMethodStub(MethodDesc* pMD, void* extra)
     }
 
     // Use direct call if possible
-    if (pMD->HasStableEntryPoint())
+    if (pTargetUSGCode != NULL)
+    {
+        X86EmitRegLoad(kRAX, pTargetUSGCode);// MOV RAX, DWORD
+    }
+    else if (pMD->HasStableEntryPoint())
     {
         X86EmitRegLoad(kRAX, pMD->GetStableEntryPoint());// MOV RAX, DWORD
     }
@@ -3380,7 +3389,11 @@ VOID StubLinkerCPU::EmitInstantiatingMethodStub(MethodDesc* pMD, void* extra)
     }
 
     // Use direct call if possible
-    if (pMD->HasStableEntryPoint())
+    if (pTargetUSGCode != NULL)
+    {
+        X86EmitNearJump(NewExternalCodeLabel((LPVOID)pTargetUSGCode));
+    }
+    else if (pMD->HasStableEntryPoint())
     {
         X86EmitNearJump(NewExternalCodeLabel((LPVOID) pMD->GetStableEntryPoint()));
     }

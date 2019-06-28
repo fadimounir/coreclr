@@ -1398,12 +1398,6 @@ TypeHandle SigPointer::GetTypeHandleThrowing(
                         {
                             typeHnd = TypeHandle(g_pCanonMethodTableClass);
                         }
-                        else if (elemType == (CorElementType)ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG)
-                        {
-                            // TODO
-                            DebugBreak();
-                            ThrowHR(E_NOTIMPL);
-                        }
 
                         argDrop = TRUE;
                     }

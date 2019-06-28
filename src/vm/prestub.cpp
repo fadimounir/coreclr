@@ -1608,13 +1608,36 @@ Stub * MakeUnboxingStubWorker(MethodDesc *pMD)
 }
 
 #if defined(FEATURE_SHARE_GENERIC_CODE) 
-Stub * MakeInstantiatingStubWorker(MethodDesc *pMD, MethodDesc* pSharedMD)
+Stub* MakeInstantiatingStubForUniversalGenericTarget(MethodDesc* pMD, PCODE pTargetCode)
 {
     CONTRACT(Stub*)
     {
         THROWS;
         GC_TRIGGERS;
-        PRECONDITION(pMD->IsInstantiatingStub() || (pSharedMD != NULL && pSharedMD->IsUniversalCanon() && pSharedMD->RequiresInstArg()));
+        PRECONDITION(!pMD->IsInstantiatingStub());
+        PRECONDITION(!pMD->RequiresInstArg() && pMD->MethodShapeRequiresInstArgOnSharedGenericCode());
+        PRECONDITION(!pMD->IsSharedByGenericMethodInstantiations());
+        PRECONDITION(pTargetCode != NULL || pMD->GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pTargetCode));
+        POSTCONDITION(CheckPointer(RETVAL));
+    }
+    CONTRACT_END;
+
+    void* extraArg = (pMD->HasMethodInstantiation() ? (void*)pMD : (void*)pMD->GetMethodTable());
+
+    CPUSTUBLINKER sl;
+    sl.EmitInstantiatingMethodStub(pMD, extraArg, pTargetCode);
+    Stub* pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+
+    RETURN pstub;
+}
+
+Stub * MakeInstantiatingStubWorker(MethodDesc *pMD)
+{
+    CONTRACT(Stub*)
+    {
+        THROWS;
+        GC_TRIGGERS;
+        PRECONDITION(pMD->IsInstantiatingStub());
         PRECONDITION(!pMD->RequiresInstArg());
         PRECONDITION(!pMD->IsSharedByGenericMethodInstantiations());
         POSTCONDITION(CheckPointer(RETVAL));
@@ -1625,15 +1648,13 @@ Stub * MakeInstantiatingStubWorker(MethodDesc *pMD, MethodDesc* pSharedMD)
     // if multiple threads get in here for the same pMD
     // it should not matter whose stuff finally gets used.
 
-    if (pSharedMD == NULL)
-    {
-        // It's an instantiated generic method
-        // Fetch the shared code associated with this instantiation
-        pSharedMD = pMD->GetWrappedMethodDesc();
-        _ASSERTE(pSharedMD != NULL && pSharedMD != pMD);
-    }
-
+    MethodDesc *pSharedMD = NULL;
     void* extraArg = NULL;
+
+    // It's an instantiated generic method
+    // Fetch the shared code associated with this instantiation
+    pSharedMD = pMD->GetWrappedMethodDesc();
+    _ASSERTE(pSharedMD != NULL && pSharedMD != pMD);
 
     if (pMD->HasMethodInstantiation())
     {
@@ -1651,7 +1672,7 @@ Stub * MakeInstantiatingStubWorker(MethodDesc *pMD, MethodDesc* pSharedMD)
 #else
     CPUSTUBLINKER sl;
     _ASSERTE(pSharedMD != NULL && pSharedMD != pMD);
-    sl.EmitInstantiatingMethodStub(pSharedMD, extraArg);
+    sl.EmitInstantiatingMethodStub(pSharedMD, extraArg, NULL);
 
     pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
 #endif
@@ -2002,9 +2023,9 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
         pStub = MakeUnboxingStubWorker(this);
     }
 #if defined(FEATURE_SHARE_GENERIC_CODE) 
-    else if (IsInstantiatingStub() && !IsUniversalCanon())
+    else if (IsInstantiatingStub())
     {
-        pStub = MakeInstantiatingStubWorker(this, NULL);
+        pStub = MakeInstantiatingStubWorker(this);
     }
 #endif // defined(FEATURE_SHARE_GENERIC_CODE)
     else if (IsIL() || IsNoMetadata())
@@ -2053,9 +2074,7 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
 
     if (pCode != NULL && GetModule()->IsReadyToRun())
     {
-        MethodDesc* pMDAssociatedWithCode = GetModule()->GetReadyToRunInfo()->GetMethodDescForEntryPoint(pCode);
-        
-        if (pMDAssociatedWithCode != NULL && pMDAssociatedWithCode->IsUniversalCanon())
+        if (GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
         {
             // Could not find a non-USG entry point. To use USG, we need to use an instantiating stub.
             // If the input method already requires an instantiating stub, then we assume that we're reaching
@@ -2063,12 +2082,10 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
             // However if we reach here and the input method does not require an instantiating stub, this means
             // that the input method could not share generic code, but since we're going to use a USG codegen,
             // we need to wrap it with an instantiating stub.
-            if (pMDAssociatedWithCode->RequiresInstArg() && !RequiresInstArg())
+            if (MethodShapeRequiresInstArgOnSharedGenericCode() && !RequiresInstArg())
             {
                 _ASSERT(!IsSharedByGenericInstantiations());
-
-                pStub = MakeInstantiatingStubWorker(this, pMDAssociatedWithCode);
-                pMDAssociatedWithCode->SetCodeEntryPoint(pCode);
+                pStub = MakeInstantiatingStubForUniversalGenericTarget(this, pCode);
                 pCode = NULL;
             }
         }

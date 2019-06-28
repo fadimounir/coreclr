@@ -285,43 +285,6 @@ LPCUTF8 MethodDesc::GetName()
     }
 }
 
-MethodDesc* MethodDesc::GetUniversalCanonicalMethod()
-{
-    MethodDesc* pResultMD = this;
-
-    if (!HasClassOrMethodInstantiation())
-        return pResultMD;
-
-    if (GetMethodTable()->HasInstantiation())
-    {
-        DWORD ntypars = GetMethodTable()->GetInstantiation().GetNumArgs();
-        TypeHandle* repInst = new TypeHandle[ntypars];
-        for (DWORD i = 0; i < ntypars; i++)
-            repInst[i] = TypeHandle(g_pUniversalCanonMethodTableClass);
-
-        TypeHandle usgMethodTable = ClassLoader::LoadGenericInstantiationThrowing(GetMethodTable()->GetModule(), GetMethodTable()->GetCl(), Instantiation(repInst, ntypars));
-        delete[] repInst;
-
-        pResultMD = usgMethodTable.AsMethodTable()->GetParallelMethodDesc(this);
-    }
-
-    if (HasMethodInstantiation())
-    {
-        // TODO
-        /*DWORD ntypars = GetMethodInstantiation().GetNumArgs();
-        TypeHandle* repInst = new TypeHandle[ntypars];
-        for (DWORD i = 0; i < ntypars; i++)
-            repInst[i] = TypeHandle(g_pUniversalCanonMethodTableClass);
-
-        pResultMD = InstantiatedMethodDesc::NewInstantiatedMethodDesc(pResultMD->GetMethodTable(), pResultMD, NULL, Instantiation(repInst, ntypars), FALSE);*/
-
-    }
-
-    pResultMD->SetIsUniversalCanon();
-
-    return pResultMD;
-}
-
 #ifndef DACCESS_COMPILE
 /*
  * Function to get a method's name, its namespace
@@ -1705,7 +1668,7 @@ BOOL MethodDesc::RequiresInstMethodTableArg()
     LIMITED_METHOD_DAC_CONTRACT;
 
     return
-        (IsSharedByGenericInstantiations() || IsUniversalCanon()) &&
+        IsSharedByGenericInstantiations() &&
         !HasMethodInstantiation() &&
         (IsStatic() || GetMethodTable()->IsValueType() || (GetMethodTable()->IsInterface() && !IsAbstract()));
 
@@ -1719,8 +1682,7 @@ BOOL MethodDesc::RequiresInstMethodDescArg()
 {
     LIMITED_METHOD_DAC_CONTRACT;
 
-    return (IsSharedByGenericInstantiations() || IsUniversalCanon()) &&
-        HasMethodInstantiation();
+    return IsSharedByGenericInstantiations() && HasMethodInstantiation();
 }
 
 //*******************************************************************************
@@ -1729,11 +1691,17 @@ BOOL MethodDesc::RequiresInstArg()
 {
     LIMITED_METHOD_DAC_CONTRACT;
 
-    BOOL fRet = (IsSharedByGenericInstantiations() || IsUniversalCanon()) &&
-        (HasMethodInstantiation() || IsStatic() || GetMethodTable()->IsValueType() || (GetMethodTable()->IsInterface() && !IsAbstract()));
+    BOOL fRet = IsSharedByGenericInstantiations() && MethodShapeRequiresInstArgOnSharedGenericCode();
 
     _ASSERT(fRet == (RequiresInstMethodTableArg() || RequiresInstMethodDescArg()));
     return fRet;
+}
+
+BOOL MethodDesc::MethodShapeRequiresInstArgOnSharedGenericCode()
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+
+    return (HasMethodInstantiation() || IsStatic() || GetMethodTable()->IsValueType() || (GetMethodTable()->IsInterface() && !IsAbstract()));
 }
 
 //*******************************************************************************

@@ -45,6 +45,7 @@ class ReadyToRunInfo
 
     Crst                            m_Crst;
     PtrHashMap                      m_entryPointToMethodDescMap;
+    PtrHashMap                      m_universalGenericEntryPointsMap;
 
     PTR_PersistentInlineTrackingMapR2R m_pPersistentInlineTrackingMap;
 
@@ -54,12 +55,12 @@ public:
     static BOOL IsReadyToRunEnabled();
 
     static PTR_ReadyToRunInfo Initialize(Module * pModule, AllocMemTracker *pamTracker);
-
-    uint LookupHashtableEntryForGenericMethod(MethodDesc* pMD);
     
     PCODE GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig, BOOL fFixups);
 
     MethodDesc * GetMethodDescForEntryPoint(PCODE entryPoint);
+
+    BOOL IsUniversalCanonicalEntryPoint(PCODE entryPoint);
 
     BOOL HasHashtableOfTypes();
     BOOL TryLookupTypeTokenFromName(const NameHandle *pName, mdToken * pFoundTypeToken);
