@@ -612,6 +612,7 @@ class SigParser
                 case ELEMENT_TYPE_NATIVE_ARRAY_TEMPLATE_ZAPSIG:
                 case ELEMENT_TYPE_NATIVE_VALUETYPE_ZAPSIG:
                 case ELEMENT_TYPE_CANON_ZAPSIG:
+                case ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG:
                 case ELEMENT_TYPE_MODULE_ZAPSIG:
                 case ELEMENT_TYPE_PINNED:
                     break;
@@ -673,6 +674,7 @@ class SigParser
                 case ELEMENT_TYPE_NATIVE_ARRAY_TEMPLATE_ZAPSIG:
                 case ELEMENT_TYPE_NATIVE_VALUETYPE_ZAPSIG:
                 case ELEMENT_TYPE_CANON_ZAPSIG:
+                case ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG:
                 case ELEMENT_TYPE_MODULE_ZAPSIG:
                 case ELEMENT_TYPE_PINNED:
                     break;

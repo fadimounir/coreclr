@@ -431,7 +431,10 @@ BOOL TypeHandle::IsCanonicalSubtype() const
 {
     LIMITED_METHOD_DAC_CONTRACT;
 
-    return (*this == TypeHandle(g_pCanonMethodTableClass)) || IsSharedByGenericInstantiations();
+    return 
+        (*this == TypeHandle(g_pCanonMethodTableClass)) ||
+        (*this == TypeHandle(g_pUniversalCanonMethodTableClass)) ||
+        IsSharedByGenericInstantiations();
 }
 
 /* static */ BOOL TypeHandle::IsCanonicalSubtypeInstantiation(Instantiation inst)

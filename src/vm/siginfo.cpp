@@ -1187,6 +1187,18 @@ TypeHandle SigPointer::GetTypeHandleThrowing(
             break;
         }
 
+        case ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG:
+        {
+#ifndef DACCESS_COMPILE
+            assert(g_pUniversalCanonMethodTableClass != NULL);
+            thRet = TypeHandle(g_pUniversalCanonMethodTableClass);
+#else
+            DacNotImpl();
+            thRet = TypeHandle();
+#endif
+            break;
+        }
+
         case ELEMENT_TYPE_MODULE_ZAPSIG:
         {
 #ifndef DACCESS_COMPILE
@@ -1385,6 +1397,12 @@ TypeHandle SigPointer::GetTypeHandleThrowing(
                                  (CorTypeInfo::GetGCType_NoThrow(elemType) == TYPE_GC_REF))
                         {
                             typeHnd = TypeHandle(g_pCanonMethodTableClass);
+                        }
+                        else if (elemType == (CorElementType)ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG)
+                        {
+                            // TODO
+                            DebugBreak();
+                            ThrowHR(E_NOTIMPL);
                         }
 
                         argDrop = TRUE;

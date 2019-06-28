@@ -48,6 +48,7 @@ HRESULT SigParser::SkipExactlyOne()
             case ELEMENT_TYPE_STRING:
             case ELEMENT_TYPE_TYPEDBYREF:
             case ELEMENT_TYPE_CANON_ZAPSIG:
+            case ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG:
                 break;
 
             case ELEMENT_TYPE_BYREF: //fallthru

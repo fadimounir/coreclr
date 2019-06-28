@@ -2007,9 +2007,6 @@ void SystemDomain::LoadBaseSystemClasses()
     // to know this before we allocate our first object.
     g_pObjectFinalizerMD = MscorlibBinder::GetMethod(METHOD__OBJECT__FINALIZE);
 
-
-    g_pCanonMethodTableClass = MscorlibBinder::GetClass(CLASS____CANON);
-
     // NOTE: !!!IMPORTANT!!! ValueType and Enum MUST be loaded one immediately after
     //                       the other, because we have coded MethodTable::IsChildValueType
     //                       in such a way that it depends on this behaviour.
@@ -2019,6 +2016,10 @@ void SystemDomain::LoadBaseSystemClasses()
     // Load the enum class
     g_pEnumClass = MscorlibBinder::GetClass(CLASS__ENUM);
     _ASSERTE(!g_pEnumClass->IsValueType());
+
+    g_pCanonMethodTableClass = MscorlibBinder::GetClass(CLASS____CANON);
+
+    g_pUniversalCanonMethodTableClass = MscorlibBinder::GetClass(CLASS____UNIVERSALCANON);
 
     // Load System.RuntimeType
     g_pRuntimeTypeClass = MscorlibBinder::GetClass(CLASS__CLASS);

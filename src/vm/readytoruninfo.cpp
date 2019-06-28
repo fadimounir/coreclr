@@ -681,11 +681,40 @@ static bool SigMatchesMethodDesc(MethodDesc* pMD, SigPointer &sig, Module * pMod
     return true;
 }
 
+uint ReadyToRunInfo::LookupHashtableEntryForGenericMethod(MethodDesc* pMD)
+{
+    uint offset = (uint)-1;
+
+    if (m_instMethodEntryPoints.IsNull())
+        return offset;
+
+    NativeHashtable::Enumerator lookup = m_instMethodEntryPoints.Lookup(GetVersionResilientMethodHashCode(pMD));
+    NativeParser entryParser;
+    while (lookup.GetNext(entryParser))
+    {
+        PCCOR_SIGNATURE pBlob = (PCCOR_SIGNATURE)entryParser.GetBlob();
+        SigPointer sig(pBlob);
+        if (SigMatchesMethodDesc(pMD, sig, m_pModule))
+        {
+            // Get the updated SigPointer location, so we can calculate the size of the blob,
+            // in order to skip the blob and find the entry point data.
+            PCCOR_SIGNATURE pSigNew;
+            DWORD cbSigNew;
+            sig.GetSignature(&pSigNew, &cbSigNew);
+            offset = entryParser.GetOffset() + (uint)(pSigNew - pBlob);
+            break;
+        }
+    }
+
+    return offset;
+}
+
 PCODE ReadyToRunInfo::GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig, BOOL fFixups)
 {
     STANDARD_VM_CONTRACT;
 
     PCODE pEntryPoint = NULL;
+    MethodDesc* pOriginalMD = pMD;
 #ifndef CROSSGEN_COMPILE
 #ifdef PROFILING_SUPPORTED
     BOOL fShouldSearchCache = TRUE;
@@ -699,26 +728,13 @@ PCODE ReadyToRunInfo::GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig
     uint offset;
     if (pMD->HasClassOrMethodInstantiation())
     {
-        if (m_instMethodEntryPoints.IsNull())
-            goto done;
+        offset = LookupHashtableEntryForGenericMethod(pMD);
 
-        NativeHashtable::Enumerator lookup = m_instMethodEntryPoints.Lookup(GetVersionResilientMethodHashCode(pMD));
-        NativeParser entryParser;
-        offset = (uint)-1;
-        while (lookup.GetNext(entryParser))
+        if (offset == (uint)-1)
         {
-            PCCOR_SIGNATURE pBlob = (PCCOR_SIGNATURE)entryParser.GetBlob();
-            SigPointer sig(pBlob);
-            if (SigMatchesMethodDesc(pMD, sig, m_pModule))
-            {
-                // Get the updated SigPointer location, so we can calculate the size of the blob,
-                // in order to skip the blob and find the entry point data.
-                PCCOR_SIGNATURE pSigNew;
-                DWORD cbSigNew;
-                sig.GetSignature(&pSigNew, &cbSigNew);
-                offset = entryParser.GetOffset() + (uint)(pSigNew - pBlob);
-                break;
-            }
+            // Lookup universal canonical entry
+            pMD = pMD->GetUniversalCanonicalMethod();
+            offset = LookupHashtableEntryForGenericMethod(pMD);
         }
 
         if (offset == (uint)-1)

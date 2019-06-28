@@ -15,4 +15,11 @@ namespace System
     internal class __Canon
     {
     }
+
+    // Similar to __Canon, but used for universal generic instantiations
+
+    [ComVisible(true)]
+    internal struct __UniversalCanon
+    {
+    }
 }

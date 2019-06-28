@@ -297,7 +297,9 @@ BOOL ZapSig::GetSignatureForTypeHandle(TypeHandle      handle,
     else if (pMT == g_pStringClass)
         elemType = ELEMENT_TYPE_STRING;
     else if (pMT == g_pCanonMethodTableClass)
-        elemType = (CorElementType) ELEMENT_TYPE_CANON_ZAPSIG;
+        elemType = (CorElementType)ELEMENT_TYPE_CANON_ZAPSIG;
+    else if (pMT == g_pUniversalCanonMethodTableClass)
+        elemType = (CorElementType)ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG;
     else if (pMT->IsArray())
         elemType = pMT->GetInternalCorElementType();  // either ELEMENT_TYPE_SZARRAY or ELEMENT_TYPE_ARRAY
 
@@ -387,6 +389,9 @@ BOOL ZapSig::GetSignatureForTypeHandle(TypeHandle      handle,
 
         case ELEMENT_TYPE_CANON_ZAPSIG:
             RETURN(handle == TypeHandle(g_pCanonMethodTableClass));
+
+        case ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG:
+            RETURN(handle == TypeHandle(g_pUniversalCanonMethodTableClass));
 
         case ELEMENT_TYPE_VAR: 
         case ELEMENT_TYPE_MVAR:

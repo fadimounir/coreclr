@@ -3854,7 +3854,7 @@ BOOL CEEInfo::canInlineTypeCheckWithObjectVTable (CORINFO_CLASS_HANDLE clsHnd)
         ret = FALSE;
     }
     else
-    if (VMClsHnd == TypeHandle(g_pCanonMethodTableClass))   
+    if (VMClsHnd == TypeHandle(g_pCanonMethodTableClass) || VMClsHnd == TypeHandle(g_pUniversalCanonMethodTableClass))   
     {
         // We can't do this optimization in shared generics code because of we do not know what the actual type is going to be.
         // (It can be array, marshalbyref, etc.)
@@ -6258,6 +6258,13 @@ CorInfoHelpFunc CEEInfo::getCastingHelperStatic(TypeHandle clsHnd, bool fThrowin
         // We may be able to take advantage of constraints to select a specialized helper.
         // This optimizations does not seem to be warranted at the moment.
         _ASSERTE(helper == CORINFO_HELP_ISINSTANCEOFANY);
+    }
+    else 
+    if (clsHnd == TypeHandle(g_pUniversalCanonMethodTableClass))
+    {
+        // TODO
+        DebugBreak();
+        ThrowHR(E_NOTIMPL);
     }
     else
     if (!clsHnd.IsTypeDesc() && clsHnd.AsMethodTable()->HasVariance())
@@ -9018,8 +9025,8 @@ CORINFO_METHOD_HANDLE CEEInfo::resolveVirtualMethodHelper(CORINFO_METHOD_HANDLE 
     MethodTable* pDerivedMT = DerivedClsHnd.GetMethodTable();
     _ASSERTE(pDerivedMT->IsRestored() && pDerivedMT->IsFullyLoaded());
 
-    // Can't devirtualize from __Canon.
-    if (DerivedClsHnd == TypeHandle(g_pCanonMethodTableClass))
+    // Can't devirtualize from __Canon or __UniversalCanon.
+    if (DerivedClsHnd == TypeHandle(g_pCanonMethodTableClass) || DerivedClsHnd == TypeHandle(g_pUniversalCanonMethodTableClass))
     {
         return nullptr;
     }

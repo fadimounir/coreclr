@@ -257,6 +257,10 @@ static PCCOR_SIGNATURE PrettyPrintType(
         str = W("class System.__Canon");
         goto APPEND;
         
+    case ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG:
+        str = W("class System.__UniversalCanon");
+        goto APPEND;
+
     case ELEMENT_TYPE_TYPEDBYREF:
         str = W("refany");
         goto APPEND;
@@ -666,6 +670,10 @@ static HRESULT PrettyPrintTypeA(
         str = "class System.__Canon";
         goto APPEND;
         
+    case ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG:
+        str = "class System.__UniversalCanon";
+        goto APPEND;
+
     case ELEMENT_TYPE_TYPEDBYREF:
         str = "refany";
         goto APPEND;

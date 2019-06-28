@@ -60,6 +60,7 @@ GPTR_IMPL(EEConfig, g_pConfig);     // configuration data (from the registry)
 GPTR_IMPL(MethodTable,      g_pObjectClass);
 GPTR_IMPL(MethodTable,      g_pRuntimeTypeClass);
 GPTR_IMPL(MethodTable,      g_pCanonMethodTableClass);  // System.__Canon
+GPTR_IMPL(MethodTable,      g_pUniversalCanonMethodTableClass);  // System.__UniversalCanon
 GPTR_IMPL(MethodTable,      g_pStringClass);
 #ifdef FEATURE_UTF8STRING
 GPTR_IMPL(MethodTable,      g_pUtf8StringClass);

@@ -4733,7 +4733,7 @@ static bool IsTypeAccessibleOutsideItsAssembly(TypeHandle th)
 
     MethodTable * pMT = th.AsMethodTable();
 
-    if (pMT == g_pCanonMethodTableClass)
+    if (pMT == g_pCanonMethodTableClass || pMT == g_pUniversalCanonMethodTableClass)
         return true;
 
     switch (pMT->GetClass()->GetProtection())
@@ -4919,7 +4919,7 @@ static BOOL CanSatisfyConstraints(Instantiation typicalInst, Instantiation candi
 
         // If this is "__Canon" and we are code sharing then we can't rule out that some
         // compatible instantiation may meet the constraints
-        if (thArg == TypeHandle(g_pCanonMethodTableClass))
+        if (thArg == TypeHandle(g_pCanonMethodTableClass) || thArg == TypeHandle(g_pUniversalCanonMethodTableClass))
             continue;
 
         // Otherwise we approximate, and just assume that we have "parametric" constraints

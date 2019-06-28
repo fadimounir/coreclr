@@ -55,6 +55,8 @@ public:
 
     static PTR_ReadyToRunInfo Initialize(Module * pModule, AllocMemTracker *pamTracker);
 
+    uint LookupHashtableEntryForGenericMethod(MethodDesc* pMD);
+    
     PCODE GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig, BOOL fFixups);
 
     MethodDesc * GetMethodDescForEntryPoint(PCODE entryPoint);

@@ -146,7 +146,7 @@ enum MethodDescClassification
     // Method is static
     mdcStatic                           = 0x0020,
 
-    // unused                           = 0x0040,
+    mdcUniversalCanonMethod             = 0x0040,
     // unused                           = 0x0080,
     // unused                           = 0x0100,
     // unused                           = 0x0200,
@@ -1022,6 +1022,18 @@ public:
         m_wFlags |= mdcDuplicate;
     }
 
+    inline BOOL IsUniversalCanon()
+    {
+        LIMITED_METHOD_CONTRACT;
+        return (m_wFlags & mdcUniversalCanonMethod) == mdcUniversalCanonMethod;
+    }
+
+    void SetIsUniversalCanon()
+    {
+        LIMITED_METHOD_CONTRACT;
+        m_wFlags |= mdcUniversalCanonMethod;
+    }
+
     //==================================================================
     // EnC
 
@@ -1052,6 +1064,8 @@ public:
     // inside a shared class then get the method table for the representative
     // class.
     inline MethodTable* GetCanonicalMethodTable();
+
+    MethodDesc* GetUniversalCanonicalMethod();
 
     Module *GetModule() const;
     Module *GetModule_NoLogging() const;
@@ -2030,6 +2044,8 @@ private:
     PCODE GetPrecompiledCode(PrepareCodeConfig* pConfig);
     PCODE GetPrecompiledNgenCode(PrepareCodeConfig* pConfig);
     PCODE GetPrecompiledR2RCode(PrepareCodeConfig* pConfig);
+    PCODE LookupPrecompiledR2RCode(PrepareCodeConfig* pConfig);
+
     PCODE GetMulticoreJitCode();
     COR_ILMETHOD_DECODER* GetAndVerifyILHeader(PrepareCodeConfig* pConfig, COR_ILMETHOD_DECODER* pIlDecoderMemory);
     COR_ILMETHOD_DECODER* GetAndVerifyMetadataILHeader(PrepareCodeConfig* pConfig, COR_ILMETHOD_DECODER* pIlDecoderMemory);

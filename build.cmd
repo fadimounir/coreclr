@@ -809,27 +809,27 @@ if %__BuildNativeCoreLib% EQU 1 (
         set COMPlus_ContinueOnAssert=0
     )
 
-    set NEXTCMD="%__CrossgenExe%" %__IbcTuning% /Platform_Assemblies_Paths "%__BinDir%\IL" /out "%__BinDir%\System.Private.CoreLib.dll" "%__BinDir%\IL\System.Private.CoreLib.dll"
-    echo %__MsgPrefix%!NEXTCMD!
-    echo %__MsgPrefix%!NEXTCMD! >> "%__CrossGenCoreLibLog%"
-    !NEXTCMD! >> "%__CrossGenCoreLibLog%" 2>&1
-    if NOT !errorlevel! == 0 (
-        echo %__MsgPrefix%Error: CrossGen System.Private.CoreLib build failed. Refer to %__CrossGenCoreLibLog%
-        REM Put it in the same log, helpful for Jenkins
-        type %__CrossGenCoreLibLog%
-        goto CrossgenFailure
-    )
-
-    set NEXTCMD="%__CrossgenExe%" /Platform_Assemblies_Paths "%__BinDir%" /CreatePdb "%__BinDir%\PDB" "%__BinDir%\System.Private.CoreLib.dll"
-    echo %__MsgPrefix%!NEXTCMD!
-    echo %__MsgPrefix%!NEXTCMD! >> "%__CrossGenCoreLibLog%"
-    !NEXTCMD! >> "%__CrossGenCoreLibLog%" 2>&1
-    if NOT !errorlevel! == 0 (
-        echo %__MsgPrefix%Error: CrossGen /CreatePdb System.Private.CoreLib build failed. Refer to %__CrossGenCoreLibLog%
-        REM Put it in the same log, helpful for Jenkins
-        type %__CrossGenCoreLibLog%
-        goto CrossgenFailure
-    )
+    REM set NEXTCMD="%__CrossgenExe%" %__IbcTuning% /Platform_Assemblies_Paths "%__BinDir%\IL" /out "%__BinDir%\System.Private.CoreLib.dll" "%__BinDir%\IL\System.Private.CoreLib.dll"
+    REM echo %__MsgPrefix%!NEXTCMD!
+    REM echo %__MsgPrefix%!NEXTCMD! >> "%__CrossGenCoreLibLog%"
+    REM !NEXTCMD! >> "%__CrossGenCoreLibLog%" 2>&1
+    REM if NOT !errorlevel! == 0 (
+    REM     echo %__MsgPrefix%Error: CrossGen System.Private.CoreLib build failed. Refer to %__CrossGenCoreLibLog%
+    REM     REM Put it in the same log, helpful for Jenkins
+    REM     type %__CrossGenCoreLibLog%
+    REM     goto CrossgenFailure
+    REM )
+	REM 
+    REM set NEXTCMD="%__CrossgenExe%" /Platform_Assemblies_Paths "%__BinDir%" /CreatePdb "%__BinDir%\PDB" "%__BinDir%\System.Private.CoreLib.dll"
+    REM echo %__MsgPrefix%!NEXTCMD!
+    REM echo %__MsgPrefix%!NEXTCMD! >> "%__CrossGenCoreLibLog%"
+    REM !NEXTCMD! >> "%__CrossGenCoreLibLog%" 2>&1
+    REM if NOT !errorlevel! == 0 (
+    REM     echo %__MsgPrefix%Error: CrossGen /CreatePdb System.Private.CoreLib build failed. Refer to %__CrossGenCoreLibLog%
+    REM     REM Put it in the same log, helpful for Jenkins
+    REM     type %__CrossGenCoreLibLog%
+    REM     goto CrossgenFailure
+    REM )
 )
 
 REM } Scope environment changes end
