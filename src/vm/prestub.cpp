@@ -2057,22 +2057,19 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
         
         if (pMDAssociatedWithCode != NULL && pMDAssociatedWithCode->IsUniversalCanon())
         {
-            if (!this->IsUniversalCanon())
+            // Could not find a non-USG entry point. To use USG, we need to use an instantiating stub.
+            // If the input method already requires an instantiating stub, then we assume that we're reaching
+            // here from the instantiating stub that was previously prepared for the input method.
+            // However if we reach here and the input method does not require an instantiating stub, this means
+            // that the input method could not share generic code, but since we're going to use a USG codegen,
+            // we need to wrap it with an instantiating stub.
+            if (pMDAssociatedWithCode->RequiresInstArg() && !RequiresInstArg())
             {
-                // Could not find a non-USG entry point. To use USG, we need to use an instantiating stub.
-                // If the input method already requires an instantiating stub, then we assume that we're reaching
-                // here from the instantiating stub that was previously prepared for the input method.
-                // However if we reach here and the input method does not require an instantiating stub, this means
-                // that the input method could not share generic code, but since we're going to use a USG codegen,
-                // we need to wrap it with an instantiating stub.
-                if (pMDAssociatedWithCode->RequiresInstArg() && !RequiresInstArg())
-                {
-                    _ASSERT(!IsSharedByGenericInstantiations());
+                _ASSERT(!IsSharedByGenericInstantiations());
 
-                    pStub = MakeInstantiatingStubWorker(this, pMDAssociatedWithCode);
-                    pMDAssociatedWithCode->SetCodeEntryPoint(pCode);
-                    pCode = NULL;
-                }
+                pStub = MakeInstantiatingStubWorker(this, pMDAssociatedWithCode);
+                pMDAssociatedWithCode->SetCodeEntryPoint(pCode);
+                pCode = NULL;
             }
         }
     }
