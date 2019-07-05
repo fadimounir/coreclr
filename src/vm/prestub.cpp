@@ -465,7 +465,10 @@ PCODE MethodDesc::GetPrecompiledCode(PrepareCodeConfig* pConfig)
                     m_pszDebugMethodSignature,
                     GetMemberDef()));
 
-            pConfig->SetNativeCode(pCode, &pCode);
+            if (!GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
+            {
+                pConfig->SetNativeCode(pCode, &pCode);
+            }
         }
     }
 #endif // FEATURE_READYTORUN
@@ -1608,6 +1611,24 @@ Stub * MakeUnboxingStubWorker(MethodDesc *pMD)
 }
 
 #if defined(FEATURE_SHARE_GENERIC_CODE) 
+Stub* MakeCallConverterThunkStub(MethodDesc* pMD, PCODE pTarget)
+{
+    CONTRACT(Stub*)
+    {
+        THROWS;
+        GC_TRIGGERS;
+        PRECONDITION(pMD != NULL);
+        POSTCONDITION(CheckPointer(RETVAL));
+    }
+    CONTRACT_END;
+
+    CPUSTUBLINKER sl;
+    sl.EmitCallConverterThunk(pMD, pTarget);
+    Stub* pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+
+    RETURN pstub;
+}
+
 Stub* MakeInstantiatingStubForUniversalGenericTarget(MethodDesc* pMD, PCODE pTargetCode)
 {
     CONTRACT(Stub*)
@@ -1847,6 +1868,44 @@ static void TestSEHGuardPageRestore()
 }
 #endif // _DEBUG
 
+// HACK
+bool IsUSG(MethodTable* pMT)
+{
+    if (pMT == g_pUniversalCanonMethodTableClass)
+        return true;
+
+    if (!pMT->HasInstantiation())
+        return false;
+
+    Instantiation inst = pMT->GetInstantiation();
+    for (DWORD i = 0; i < inst.GetNumArgs(); i++)
+    {
+        if (IsUSG(inst[i].AsMethodTable()))
+            return true;
+    }
+
+    return false;
+}
+
+bool IsUSG(MethodDesc* pMD)
+{
+    if (IsUSG(pMD->GetMethodTable()))
+        return true;
+
+    if (!pMD->HasMethodInstantiation())
+        return false;
+
+    Instantiation inst = pMD->GetMethodInstantiation();
+    for (DWORD i = 0; i < inst.GetNumArgs(); i++)
+    {
+        if (IsUSG(inst[i].AsMethodTable()))
+            return true;
+    }
+
+    return false;
+}
+// END OF HACK
+
 // Separated out the body of PreStubWorker for the case where we don't have a frame.
 //
 // Note that pDispatchingMT may not actually be the MT that is indirected through.
@@ -2016,7 +2075,12 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
         // backpatching.
         RETURN pCode;
     }
-    
+
+    if (strcmp(GetModule()->GetSimpleName(), "console") == 0)
+    {
+        int a = 0; a++;
+    }
+
     /**************************   CODE CREATION  *************************/
     if (IsUnboxingStub())
     {
@@ -2072,23 +2136,35 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
     /**************************   POSTJIT *************************/
     _ASSERTE(pCode == NULL || GetNativeCode() == NULL || pCode == GetNativeCode());
 
-    if (pCode != NULL && GetModule()->IsReadyToRun())
+    if (pCode != NULL && GetModule()->IsReadyToRun() && GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
     {
-        if (GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
+        if (!IsUSG(this))
         {
-            // Could not find a non-USG entry point. To use USG, we need to use an instantiating stub.
-            // If the input method already requires an instantiating stub, then we assume that we're reaching
-            // here from the instantiating stub that was previously prepared for the input method.
-            // However if we reach here and the input method does not require an instantiating stub, this means
-            // that the input method could not share generic code, but since we're going to use a USG codegen,
-            // we need to wrap it with an instantiating stub.
-            if (MethodShapeRequiresInstArgOnSharedGenericCode() && !RequiresInstArg())
-            {
-                _ASSERT(!IsSharedByGenericInstantiations());
-                pStub = MakeInstantiatingStubForUniversalGenericTarget(this, pCode);
-                pCode = NULL;
-            }
+            pStub = MakeCallConverterThunkStub(this, pCode);
+
+            GetOrCreatePrecode()->SetTargetInterlocked(pStub->GetEntryPoint());
+
+            RETURN pStub->GetEntryPoint();
         }
+
+        // // Could not find a non-USG entry point. To use USG, we need to use an instantiating stub.
+        // // If the input method already requires an instantiating stub, then we assume that we're reaching
+        // // here from the instantiating stub that was previously prepared for the input method.
+        // // However if we reach here and the input method does not require an instantiating stub, this means
+        // // that the input method could not share generic code, but since we're going to use a USG codegen,
+        // // we need to wrap it with an instantiating stub.
+        // if (MethodShapeRequiresInstArgOnSharedGenericCode() && !RequiresInstArg() && !IsUSG(this))
+        // {
+        //     _ASSERT(!IsSharedByGenericInstantiations());
+        //     pStub = MakeInstantiatingStubForUniversalGenericTarget(this, pCode);
+        //     pStub = MakeCallConverterThunkStub(this, pStub->GetEntryPoint());
+        // }
+        // else
+        // {
+        //     pStub = MakeCallConverterThunkStub(this, pCode);
+        // }
+        // 
+        // pCode = NULL;
     }
 
     // At this point we must have either a pointer to managed code or to a stub. All of the above code
@@ -3445,6 +3521,72 @@ extern "C" SIZE_T STDCALL DynamicHelperWorker(TransitionBlock * pTransitionBlock
         *(SIZE_T *)((TADDR)pTransitionBlock + TransitionBlock::GetOffsetOfArgumentRegisters()) = result;
     return pHelper;
 }
+
+EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, MethodDesc* pMD, PCODE pTarget)
+{
+    _ASSERTE(!IsUSG(pMD));
+
+    PCODE pCode = NULL;
+
+    MAKE_CURRENT_THREAD_AVAILABLE();
+
+    INSTALL_MANAGED_EXCEPTION_DISPATCHER;
+    INSTALL_UNWIND_AND_CONTINUE_HANDLER;
+
+    MethodDesc* pUniversalCanonMD = NULL;
+
+    if (pMD->GetMethodTable()->HasInstantiation())
+    {
+        DWORD ntypars = pMD->GetMethodTable()->GetInstantiation().GetNumArgs();
+        TypeHandle* repInst = new TypeHandle[ntypars];
+        for (DWORD i = 0; i < ntypars; i++)
+            repInst[i] = TypeHandle(g_pUniversalCanonMethodTableClass);
+
+        TypeHandle usgMethodTable = ClassLoader::LoadGenericInstantiationThrowing(
+            pMD->GetMethodTable()->GetModule(), 
+            pMD->GetMethodTable()->GetCl(), 
+            Instantiation(repInst, ntypars));
+
+        delete[] repInst;
+
+        pUniversalCanonMD = usgMethodTable.AsMethodTable()->GetParallelMethodDesc(pMD);
+    }
+
+    // TODO: method instantiation
+
+    GCX_PREEMP_THREAD_EXISTS(CURRENT_THREAD);
+
+    pCode = pUniversalCanonMD->DoPrestub(NULL);
+
+    UNINSTALL_UNWIND_AND_CONTINUE_HANDLER;
+    UNINSTALL_MANAGED_EXCEPTION_DISPATCHER;
+
+    _ASSERTE(pCode != NULL);
+
+    CallDescrData callDescrData;
+
+    callDescrData.pSrc = ((BYTE*)pTransitionBlock) + sizeof(TransitionBlock);
+    callDescrData.numStackSlots = 4;// nStackBytes / STACK_ELEM_SIZE;
+#ifdef CALLDESCR_ARGREGS
+    callDescrData.pArgumentRegisters = (ArgumentRegisters*)(pTransitionBlock + TransitionBlock::GetOffsetOfArgumentRegisters());
+#endif
+#ifdef CALLDESCR_RETBUFFARGREG
+    callDescrData.pRetBuffArg = (UINT64*)(pTransitionBlock + TransitionBlock::GetOffsetOfRetBuffArgReg());
+#endif
+#ifdef CALLDESCR_FPARGREGS
+    callDescrData.pFloatArgumentRegisters = NULL;
+#endif
+#ifdef CALLDESCR_REGTYPEMAP
+    callDescrData.dwRegTypeMap = 0;
+#endif
+    callDescrData.fpReturnSize = 0;// argit.GetFPReturnSize();
+    callDescrData.pTarget = pCode;
+
+    CallDescrWorker(&callDescrData);
+
+    return pCode;
+}
+
 
 #endif // FEATURE_READYTORUN
 
