@@ -3788,19 +3788,20 @@ CORINFO_GENERIC_HANDLE JIT_GenericHandleWorker(MethodDesc * pMD, MethodTable * p
             pDeclaringMT = pParentMT;
         }
 
-        if (pDeclaringMT != pMT)
-        {
-            JitGenericHandleCacheKey key((CORINFO_CLASS_HANDLE)pDeclaringMT, NULL, signature);
-            HashDatum res;
-            if (g_pJitGenericHandleCache->GetValue(&key,&res))
-            {
-                // Add the denormalized key for faster lookup next time. This is not a critical entry - no need 
-                // to specify appdomain affinity.
-                JitGenericHandleCacheKey denormKey((CORINFO_CLASS_HANDLE)pMT, NULL, signature);
-                AddToGenericHandleCache(&denormKey, res);
-                return (CORINFO_GENERIC_HANDLE) (DictionaryEntry) res;                
-            }
-        }
+        // TODO: TEMP: commented block to force dictionary lookup with logging
+        //if (pDeclaringMT != pMT)
+        //{
+        //    JitGenericHandleCacheKey key((CORINFO_CLASS_HANDLE)pDeclaringMT, NULL, signature);
+        //    HashDatum res;
+        //    if (g_pJitGenericHandleCache->GetValue(&key,&res))
+        //    {
+        //        // Add the denormalized key for faster lookup next time. This is not a critical entry - no need 
+        //        // to specify appdomain affinity.
+        //        JitGenericHandleCacheKey denormKey((CORINFO_CLASS_HANDLE)pMT, NULL, signature);
+        //        AddToGenericHandleCache(&denormKey, res);
+        //        return (CORINFO_GENERIC_HANDLE) (DictionaryEntry) res;                
+        //    }
+        //}
     }
 
     DictionaryEntry * pSlot;
@@ -3822,8 +3823,9 @@ CORINFO_GENERIC_HANDLE JIT_GenericHandleWorker(MethodDesc * pMD, MethodTable * p
 
         // Add the normalized key (pDeclaringMT) here so that future lookups of any
         // inherited types are faster next time rather than just just for this specific pMT.
-        JitGenericHandleCacheKey key((CORINFO_CLASS_HANDLE)pDeclaringMT, (CORINFO_METHOD_HANDLE)pMD, signature, pDictDomain);
-        AddToGenericHandleCache(&key, (HashDatum)result);
+        // TODO: TEMP: commented 2 lines to force dictionary lookup with logging
+        //JitGenericHandleCacheKey key((CORINFO_CLASS_HANDLE)pDeclaringMT, (CORINFO_METHOD_HANDLE)pMD, signature, pDictDomain);
+        //AddToGenericHandleCache(&key, (HashDatum)result);
     }
 
     return result;
@@ -4048,8 +4050,9 @@ NOINLINE HCIMPL3(CORINFO_MethodPtr, JIT_VirtualFunctionPointer_Framed, Object * 
         _ASSERTE(addr);
 
         // This is not a critical entry - no need to specify appdomain affinity
-        JitGenericHandleCacheKey key(objRef->GetMethodTable(), classHnd, methodHnd);
-        AddToGenericHandleCache(&key, (HashDatum)addr);
+        // TODO: TEMP: commented 2 lines to force dictionary lookup with logging
+        //JitGenericHandleCacheKey key(objRef->GetMethodTable(), classHnd, methodHnd);
+        //AddToGenericHandleCache(&key, (HashDatum)addr);
     }
 
     HELPER_METHOD_FRAME_END();

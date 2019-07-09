@@ -76,15 +76,8 @@ BOOL ReadyToRunInfo::IsUniversalCanonicalEntryPoint(PCODE entryPoint)
     }
     CONTRACTL_END;
 
-#if defined(_TARGET_AMD64_) || (defined(_TARGET_X86_) && defined(FEATURE_PAL))
-    // A normal method entry point is always 8 byte aligned, but a funclet can start at an odd address.
-    // Since PtrHashMap can't handle odd pointers, check for this case and return FALSE.
-    if ((entryPoint & 0x1) != 0)
-        return FALSE;
-#endif
-
-    TADDR val = (TADDR)m_universalGenericEntryPointsMap.LookupValue(PCODEToPINSTR(entryPoint), (LPVOID)PCODEToPINSTR(entryPoint));
-    return (val != (TADDR)INVALIDENTRY);
+    MethodDesc* pMD = GetMethodDescForEntryPoint(entryPoint);
+    return pMD != NULL && pMD->HasClassOrMethodInstantiation() && pMD->IsTypicalMethodDefinition();
 }
 
 BOOL ReadyToRunInfo::HasHashtableOfTypes()
@@ -609,7 +602,6 @@ ReadyToRunInfo::ReadyToRunInfo(Module * pModule, PEImageLayout * pLayout, READYT
     {
         LockOwner lock = {&m_Crst, IsOwnerOfCrst};
         m_entryPointToMethodDescMap.Init(TRUE, &lock);
-        m_universalGenericEntryPointsMap.Init(TRUE, &lock);
     }
 
     // For format version 2.1 and later, there is an optional inlining table 
@@ -723,7 +715,7 @@ PCODE ReadyToRunInfo::GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig
 
     if (pMD->HasClassOrMethodInstantiation())
     {
-        if (!m_instMethodEntryPoints.IsNull())
+        if (!m_instMethodEntryPoints.IsNull() && !pMD->IsTypicalMethodDefinition())
         {
             NativeHashtable::Enumerator lookup = m_instMethodEntryPoints.Lookup(GetVersionResilientMethodHashCode(pMD));
             NativeParser entryParser;
@@ -816,13 +808,7 @@ PCODE ReadyToRunInfo::GetEntryPoint(MethodDesc * pMD, PrepareCodeConfig* pConfig
         CrstHolder ch(&m_Crst);
 
         if (m_entryPointToMethodDescMap.LookupValue(PCODEToPINSTR(pEntryPoint), (LPVOID)PCODEToPINSTR(pEntryPoint)) == (LPVOID)INVALIDENTRY)
-            m_entryPointToMethodDescMap.InsertValue(PCODEToPINSTR(pEntryPoint), pMD);
-
-        if (isUSG)
-        {
-            if (m_universalGenericEntryPointsMap.LookupValue(PCODEToPINSTR(pEntryPoint), (LPVOID)PCODEToPINSTR(pEntryPoint)) == (LPVOID)INVALIDENTRY)
-                m_universalGenericEntryPointsMap.InsertValue(PCODEToPINSTR(pEntryPoint), (LPVOID)PCODEToPINSTR(pEntryPoint));
-        }
+            m_entryPointToMethodDescMap.InsertValue(PCODEToPINSTR(pEntryPoint), (isUSG ? pMD->LoadTypicalMethodDefinition() : pMD));
     }
 
 #ifndef CROSSGEN_COMPILE

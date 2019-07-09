@@ -773,14 +773,36 @@ Dictionary::PopulateEntry(
     {
         SigTypeContext typeContext;
 
+        // TODO: TEMP: remove debug logging code
+        bool logDebug = false;
+
         if (pMT != NULL)
         {
             SigTypeContext::InitTypeContext(pMT, &typeContext);
+            if (strcmp(pMT->GetModule()->GetSimpleName(), "console") == 0)
+                logDebug = true;
         }
         else
         {
             SigTypeContext::InitTypeContext(pMD, &typeContext);
+            if (strcmp(pMD->GetModule()->GetSimpleName(), "console") == 0)
+                logDebug = true;
         }
+
+        if (logDebug)
+        {
+            switch (kind)
+            {
+            case TypeHandleSlot: printf("  DICT LOOKUP {TypeHandleSlot}\n"); break;
+            case MethodDescSlot: printf("  DICT LOOKUP {MethodDescSlot}\n"); break;
+            case MethodEntrySlot: printf("  DICT LOOKUP {MethodEntrySlot}\n"); break;
+            case ConstrainedMethodEntrySlot: printf("  DICT LOOKUP {ConstrainedMethodEntrySlot}\n"); break;
+            case DispatchStubAddrSlot: printf("  DICT LOOKUP {DispatchStubAddrSlot}\n"); break;
+            case FieldDescSlot: printf("  DICT LOOKUP {FieldDescSlot}\n"); break;
+            case DeclaringTypeHandleSlot: printf("  DICT LOOKUP {DeclaringTypeHandleSlot}\n"); break;
+            }
+        }
+
 
         TypeHandle constraintType;
         TypeHandle declaringType;
@@ -835,6 +857,10 @@ Dictionary::PopulateEntry(
             }
 
             result = (CORINFO_GENERIC_HANDLE)th.AsPtr();
+
+            if (logDebug)
+                printf("    > RES = MethodTable {%s} = 0x%x\n", th.AsMethodTable()->GetDebugClassName(), (ULONG)result);
+
             break;
         }
 
@@ -1166,6 +1192,9 @@ Dictionary::PopulateEntry(
             if (kind == MethodEntrySlot)
             {
                 result = (CORINFO_GENERIC_HANDLE)pMethod->GetMultiCallableAddrOfCode();
+
+                if (logDebug)
+                    printf("    > RES = GetMultiCallableAddrOfCode {%s::%s} = 0x%x\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG)result);
             }
             else
             if (kind == DispatchStubAddrSlot)
@@ -1174,11 +1203,17 @@ Dictionary::PopulateEntry(
                 PCODE *ppCode = (PCODE*)(void*)pMethod->GetLoaderAllocator()->GetHighFrequencyHeap()->AllocMem(S_SIZE_T(sizeof(PCODE)));
                 *ppCode = pMethod->GetMultiCallableAddrOfCode();
                 result = (CORINFO_GENERIC_HANDLE)ppCode;
+
+                if (logDebug)
+                    printf("    > RES = GetMultiCallableAddrOfCode {%s::%s} = 0x%x\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG)result);
             }
             else
             {
                 _ASSERTE(kind == MethodDescSlot);
                 result = (CORINFO_GENERIC_HANDLE)pMethod;
+
+                if (logDebug)
+                    printf("    > RES = MethodDesc {%s::%s} = 0x%x\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG)result);
             }
             break;
         }
@@ -1196,6 +1231,9 @@ Dictionary::PopulateEntry(
                     ownerType.AsMethodTable()->EnsureInstanceActive();
 
                 result = (CORINFO_GENERIC_HANDLE)pField;
+
+                if (logDebug)
+                    printf("    > RES = FieldDesc {%s} = 0x%x\n", pField->GetDebugName(), (ULONG)result);
             }
             else
             {

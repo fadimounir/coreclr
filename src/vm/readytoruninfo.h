@@ -45,7 +45,6 @@ class ReadyToRunInfo
 
     Crst                            m_Crst;
     PtrHashMap                      m_entryPointToMethodDescMap;
-    PtrHashMap                      m_universalGenericEntryPointsMap;
 
     PTR_PersistentInlineTrackingMapR2R m_pPersistentInlineTrackingMap;
 

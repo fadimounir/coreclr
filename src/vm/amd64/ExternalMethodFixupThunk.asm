@@ -46,8 +46,7 @@ NESTED_ENTRY CallConverterStub, _TEXT
         PROLOG_WITH_TRANSITION_BLOCK
 
         lea             rcx, [rsp + __PWTB_TransitionBlock]     ; pTransitionBlock*
-        mov             rdx, r10                                ; pMethodDesc
-        mov             r8, r11                                 ; pTarget
+        mov             rdx, r10                                ; pData
         call            CallConverterWorker
 
         EPILOG_WITH_TRANSITION_BLOCK_TAILCALL

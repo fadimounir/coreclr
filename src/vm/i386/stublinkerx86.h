@@ -365,7 +365,7 @@ class StubLinkerCPU : public StubLinker
 
         VOID EmitUnboxMethodStub(MethodDesc* pRealMD);
 #if defined(FEATURE_SHARE_GENERIC_CODE)  
-        VOID EmitCallConverterThunk(MethodDesc* pMD, PCODE pTarget);
+        VOID EmitCallConverterThunk(UINT_PTR pData);
         VOID EmitInstantiatingMethodStub(MethodDesc* pMD, void* extra, PCODE pTargetUSGCode);
 #endif // FEATURE_SHARE_GENERIC_CODE
 

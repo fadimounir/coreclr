@@ -3194,21 +3194,18 @@ VOID StubLinkerCPU::EmitUnboxMethodStub(MethodDesc* pUnboxMD)
 
 
 #if defined(FEATURE_SHARE_GENERIC_CODE) && !defined(FEATURE_STUBS_AS_IL)
-VOID StubLinkerCPU::EmitCallConverterThunk(MethodDesc* pMD, PCODE pTarget)
+VOID StubLinkerCPU::EmitCallConverterThunk(UINT_PTR pData)
 {
     CONTRACTL
     {
         STANDARD_VM_CHECK;
-        PRECONDITION(pMD != NULL);
+        PRECONDITION(pData != NULL);
     }
     CONTRACTL_END;
 
 #ifdef _TARGET_AMD64_
 
-    EmitDebugBreak();
-
-    X86EmitRegLoad(kR10, (UINT_PTR)pMD);
-    X86EmitRegLoad(kR11, (UINT_PTR)pTarget);
+    X86EmitRegLoad(kR10, pData);
 
     //EmitLabelRef(GetEEFuncEntryPoint(CallConverterStub), reinterpret_cast<X64NearJumpExecute&>(gX64NearJumpExecute), 0);
 

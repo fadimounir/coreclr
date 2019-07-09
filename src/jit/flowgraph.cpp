@@ -7478,13 +7478,15 @@ GenTree* Compiler::fgOptimizeDelegateConstructor(GenTreeCall*            call,
             }
         }
         // ReadyToRun has this optimization for a non-virtual function pointers only for now.
-        else if (oper == GT_FTN_ADDR)
+        else if (oper == GT_FTN_ADDR || (oper == GT_CALL && targetMethod->gtCall.gtCallMethHnd == eeFindHelper(CORINFO_HELP_READYTORUN_GENERIC_HANDLE)))
         {
+            // GT_CALL indicates that the delegate target is the result of a dictionary lookup (used in universal generics)
+
             JITDUMP("optimized\n");
 
             GenTree*        thisPointer       = call->gtCallObjp;
             GenTree*        targetObjPointers = call->gtCallArgs->Current();
-            GenTreeArgList* helperArgs        = gtNewArgList(thisPointer, targetObjPointers);
+            GenTreeArgList* helperArgs        = gtNewArgList(thisPointer, oper == GT_FTN_ADDR ? targetObjPointers : targetMethod);
 
             call = gtNewHelperCallNode(CORINFO_HELP_READYTORUN_DELEGATE_CTOR, TYP_VOID, helperArgs);
 
