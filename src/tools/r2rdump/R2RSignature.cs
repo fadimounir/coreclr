@@ -1549,6 +1549,10 @@ namespace R2RDump
                     builder.Append("PERSONALITY_ROUTINE_FILTER_FUNCLET");
                     break;
 
+                case ReadyToRunHelper.READYTORUN_HELPER_ConventionConverter:
+                    builder.Append("CORINFO_HELP_CALL_CONVERTER_THUNK");
+                    break;
+
                 //
                 // Deprecated/legacy
                 //

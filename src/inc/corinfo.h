@@ -660,6 +660,8 @@ enum CorInfoHelpFunc
 
     CORINFO_HELP_GVMLOOKUP_FOR_SLOT,        // Resolve a generic virtual method target from this pointer and runtime method handle 
 
+    CORINFO_HELP_CALL_CONVERTER_THUNK,      // Construct a calling convention converter thunk
+
     CORINFO_HELP_COUNT,
 };
 
@@ -1697,7 +1699,9 @@ struct CORINFO_CALL_INFO
         CORINFO_LOOKUP      codePointerLookup;
     };
 
-    CORINFO_CONST_LOOKUP    instParamLookup;    // Used by Ready-to-Run
+    // Used by Ready-to-Run
+    CORINFO_CONST_LOOKUP    instParamLookup;
+    unsigned                callConverterKind;
 
     BOOL                    secureDelegateInvoke;
 };

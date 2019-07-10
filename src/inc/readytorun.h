@@ -315,6 +315,8 @@ enum ReadyToRunHelper
     READYTORUN_HELPER_MonitorEnter              = 0xF8,
     READYTORUN_HELPER_MonitorExit               = 0xF9,
 
+    READYTORUN_HELPER_ConventionConverter       = 0x113,
+
     //
     // Deprecated/legacy
     //

@@ -5763,6 +5763,10 @@ GenTree* Compiler::impImportLdvirtftn(GenTree*                thisPtr,
         return nullptr;
     }
 
+    GenTree* exactMethodDescCopy;
+    exactMethodDesc = impCloneExpr(exactMethodDesc, &exactMethodDescCopy, NO_CLASS_HANDLE, (unsigned)CHECK_SPILL_ALL,
+        nullptr DEBUGARG("LDVIRTFTN method handle"));
+
     GenTreeArgList* helpArgs = gtNewArgList(exactMethodDesc);
 
     helpArgs = gtNewListNode(exactTypeDesc, helpArgs);
@@ -5771,7 +5775,19 @@ GenTree* Compiler::impImportLdvirtftn(GenTree*                thisPtr,
 
     // Call helper function.  This gets the target address of the final destination callsite.
 
-    return gtNewHelperCallNode(CORINFO_HELP_VIRTUAL_FUNC_PTR, TYP_I_IMPL, helpArgs);
+    GenTree* fptr = gtNewHelperCallNode(CORINFO_HELP_VIRTUAL_FUNC_PTR, TYP_I_IMPL, helpArgs);
+
+    // Call helper function to convert the calling convention if needed
+
+    if (opts.IsReadyToRun() && pCallInfo->callConverterKind != 0)
+    {
+        helpArgs = gtNewArgList(fptr, exactMethodDescCopy,
+            new (this, GT_CNS_INT) GenTreeIntCon(TYP_UINT, pCallInfo->callConverterKind));
+
+        fptr = gtNewHelperCallNode(CORINFO_HELP_CALL_CONVERTER_THUNK, TYP_I_IMPL, helpArgs);
+    }
+
+    return fptr;
 }
 
 //------------------------------------------------------------------------

@@ -1653,13 +1653,6 @@ bool IsUSG(MethodDesc* pMD)
 // END OF HACK
 
 #if defined(FEATURE_SHARE_GENERIC_CODE) 
-struct ConverterThunkData
-{
-    CORCOMPILE_CONVERTER_KIND Kind;
-    MethodDesc* Method;
-    PCODE Code;
-};
-
 Stub* MakeCallConverterThunkStub(ConverterThunkData* pData)
 {
     CONTRACT(Stub*)
@@ -3625,10 +3618,11 @@ EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, Co
 
     case CONVERT_GENERIC_TO_STANDARD:
         {
+            // TODO: detect case where target == precode jump instruction, where target is normal->USG converter, and skip double conversion
+
             _ASSERTE(pData->Code != NULL);
             _ASSERT(pData->Method->IsVtableMethod());
 
-            // TODO
             pTargetMD = pData->Method;
 
             printf("  ** CONVERT_GENERIC_TO_STANDARD  %s::%s\n", pData->Method->m_pszDebugClassName, pData->Method->m_pszDebugMethodName);

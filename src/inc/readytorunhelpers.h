@@ -117,5 +117,7 @@ HELPER(READYTORUN_HELPER_PInvokeEnd,                CORINFO_HELP_JIT_PINVOKE_END
 HELPER(READYTORUN_HELPER_MonitorEnter,              CORINFO_HELP_MON_ENTER,                         )
 HELPER(READYTORUN_HELPER_MonitorExit,               CORINFO_HELP_MON_EXIT,                          )
 
+HELPER(READYTORUN_HELPER_ConventionConverter,       CORINFO_HELP_CALL_CONVERTER_THUNK,              )
+
 #undef HELPER
 #undef OPTIMIZEFORSPEED
