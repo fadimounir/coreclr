@@ -469,6 +469,9 @@ public:
     {
         LIMITED_METHOD_CONTRACT;
 
+        if (IsArgForcedPassedByRef())
+            return TRUE;
+
 #ifdef _TARGET_AMD64_
         return IsArgPassedByRef(m_argSize);
 #elif defined(_TARGET_ARM64_)
@@ -482,6 +485,12 @@ public:
         PORTABILITY_ASSERT("ArgIteratorTemplate::IsArgPassedByRef");
         return FALSE;
 #endif
+    }
+
+    BOOL IsArgForcedPassedByRef()
+    {
+        // This should be true for valuetypes instantiated over T in a generic signature using universal shared generic calling convention
+        return m_argForceByRef;
     }
 
 #endif // ENREGISTERED_PARAMTYPE_MAXSIZE
@@ -696,6 +705,7 @@ protected:
     CorElementType      m_argType;
     int                 m_argSize;
     TypeHandle          m_argTypeHandle;
+    bool                m_argForceByRef;
 #if (defined(_TARGET_AMD64_) && defined(UNIX_AMD64_ABI)) || defined(_TARGET_ARM64_)
     ArgLocDesc          m_argLocDescForStructInRegs;
     bool                m_hasArgLocDescForStructInRegs;
@@ -986,14 +996,19 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
     if (m_argNum == this->NumFixedArgs())
         return TransitionBlock::InvalidOffset;
 
+    bool argForceByRef;
     TypeHandle thValueType;
-    CorElementType argType = this->GetNextArgumentType(m_argNum++, &thValueType);
+    CorElementType argType = this->GetNextArgumentType(m_argNum++, &thValueType, &argForceByRef);
 
     int argSize = MetaSig::GetElemSize(argType, thValueType);
 
     m_argType = argType;
     m_argSize = argSize;
     m_argTypeHandle = thValueType;
+    m_argForceByRef = argForceByRef;
+
+    argType = m_argForceByRef ? ELEMENT_TYPE_BYREF : argType;
+    argSize = m_argForceByRef ? sizeof(LPVOID) : argSize;
 
 #if defined(UNIX_AMD64_ABI) || defined (_TARGET_ARM64_)
     m_hasArgLocDescForStructInRegs = false;
@@ -1417,7 +1432,14 @@ void ArgIteratorTemplate<ARGITERATOR_BASE>::ComputeReturnFlags()
     CONTRACTL_END
 
     TypeHandle thValueType;
-    CorElementType type = this->GetReturnType(&thValueType);
+    bool returnTypeForcedByRef;
+    CorElementType type = this->GetReturnType(&thValueType, &returnTypeForcedByRef);
+
+    if (returnTypeForcedByRef)
+    {
+        m_dwFlags |= RETURN_FLAGS_COMPUTED | RETURN_HAS_RET_BUFFER;
+        return;
+    }
 
     DWORD flags = RETURN_FLAGS_COMPUTED;
     switch (type)
@@ -1578,7 +1600,10 @@ void ArgIteratorTemplate<ARGITERATOR_BASE>::ForceSigWalk()
     for (DWORD i = 0; i < nArgs; i++)
     {        
         TypeHandle thValueType;        
-        CorElementType type = this->GetNextArgumentType(i, &thValueType);
+        bool argForcedToBeByref;
+        CorElementType type = this->GetNextArgumentType(i, &thValueType, &argForcedToBeByref);
+        if (argForcedToBeByref)
+            type = CorElementType.ELEMENT_TYPE_BYREF;
 
         if (!IsArgumentInRegister(&numRegistersUsed, type))
         {
@@ -1690,10 +1715,20 @@ class ArgIteratorBase
 {
 protected:
     MetaSig * m_pSig;
+    bool* m_pForcedByRefParams;
+    DWORD m_nForcedByRefParams;
 
-    FORCEINLINE CorElementType GetReturnType(TypeHandle * pthValueType)
+public:
+    FORCEINLINE CorElementType GetReturnType(TypeHandle * pthValueType, bool* pForceByRefReturn)
     {
         WRAPPER_NO_CONTRACT;
+        _ASSERTE(pForceByRefReturn != nullptr);
+
+        if (m_pForcedByRefParams != nullptr && m_nForcedByRefParams > 0)
+            *pForceByRefReturn = m_pForcedByRefParams[0];
+        else
+            *pForceByRefReturn = false;
+
 #ifdef ENREGISTERED_RETURNTYPE_INTEGER_MAXSIZE
         return m_pSig->GetReturnTypeNormalized(pthValueType);
 #else
@@ -1701,10 +1736,16 @@ protected:
 #endif
     }
 
-    FORCEINLINE CorElementType GetNextArgumentType(DWORD iArg, TypeHandle * pthValueType)
+    FORCEINLINE CorElementType GetNextArgumentType(DWORD iArg, TypeHandle * pthValueType, bool* pForceByRefReturn)
     {
         WRAPPER_NO_CONTRACT;
-        _ASSERTE(iArg == m_pSig->GetArgNum());
+        _ASSERTE(iArg == m_pSig->GetArgNum() && pForceByRefReturn != nullptr);
+
+        *pForceByRefReturn = false;
+
+        if (m_pForcedByRefParams != nullptr && (iArg + 1) < m_nForcedByRefParams)
+            * pForceByRefReturn = m_pForcedByRefParams[iArg + 1];
+
         CorElementType et = m_pSig->PeekArgNormalized(pthValueType);
         m_pSig->SkipArg();
         return et;
@@ -1721,7 +1762,6 @@ protected:
         return pMT->IsRegPassedStruct();
     }
 
-public:
     BOOL HasThis()
     {
         LIMITED_METHOD_CONTRACT;
@@ -1771,6 +1811,17 @@ public:
     ArgIterator(MetaSig * pSig)
     {
         m_pSig = pSig;
+        m_pForcedByRefParams = nullptr;
+        m_nForcedByRefParams = 0;
+    }
+
+    ArgIterator(MetaSig* pSig, bool* pForcedByRefParams, DWORD nForcedByRefsParams)
+    {
+        _ASSERTE(nForcedByRefsParams == 0 || (nForcedByRefsParams == (pSig->NumFixedArgs() + 1) && pForcedByRefParams != nullptr));
+
+        m_pSig = pSig;
+        m_pForcedByRefParams = (nForcedByRefsParams == 0 ? nullptr : pForcedByRefParams);
+        m_nForcedByRefParams = nForcedByRefsParams;
     }
 
     // This API returns true if we are returning a structure in registers instead of using a byref return buffer

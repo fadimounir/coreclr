@@ -859,7 +859,7 @@ Dictionary::PopulateEntry(
             result = (CORINFO_GENERIC_HANDLE)th.AsPtr();
 
             if (logDebug)
-                printf("    > RES = MethodTable {%s} = 0x%x\n", th.AsMethodTable()->GetDebugClassName(), (ULONG)result);
+                printf("    > RES = MethodTable {%s} = %#zx\n", th.AsMethodTable()->GetDebugClassName(), (ULONG_PTR)result);
 
             break;
         }
@@ -1194,7 +1194,7 @@ Dictionary::PopulateEntry(
                 result = (CORINFO_GENERIC_HANDLE)pMethod->GetMultiCallableAddrOfCode();
 
                 if (logDebug)
-                    printf("    > RES = GetMultiCallableAddrOfCode {%s::%s} = 0x%x\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG)result);
+                    printf("    > RES = GetMultiCallableAddrOfCode {%s::%s} = %#zx\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG_PTR)result);
             }
             else
             if (kind == DispatchStubAddrSlot)
@@ -1205,7 +1205,7 @@ Dictionary::PopulateEntry(
                 result = (CORINFO_GENERIC_HANDLE)ppCode;
 
                 if (logDebug)
-                    printf("    > RES = GetMultiCallableAddrOfCode {%s::%s} = 0x%x\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG)result);
+                    printf("    > RES = GetMultiCallableAddrOfCode {%s::%s} = %#zx\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG_PTR)result);
             }
             else
             {
@@ -1213,7 +1213,7 @@ Dictionary::PopulateEntry(
                 result = (CORINFO_GENERIC_HANDLE)pMethod;
 
                 if (logDebug)
-                    printf("    > RES = MethodDesc {%s::%s} = 0x%x\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG)result);
+                    printf("    > RES = MethodDesc {%s::%s} = %#zx\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG_PTR)result);
             }
             break;
         }
@@ -1233,7 +1233,7 @@ Dictionary::PopulateEntry(
                 result = (CORINFO_GENERIC_HANDLE)pField;
 
                 if (logDebug)
-                    printf("    > RES = FieldDesc {%s} = 0x%x\n", pField->GetDebugName(), (ULONG)result);
+                    printf("    > RES = FieldDesc {%s} = %#zx\n", pField->GetDebugName(), (ULONG_PTR)result);
             }
             else
             {

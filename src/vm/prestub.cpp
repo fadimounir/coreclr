@@ -3591,71 +3591,535 @@ extern "C" SIZE_T STDCALL DynamicHelperWorker(TransitionBlock * pTransitionBlock
     return pHelper;
 }
 
+// TODO: refactor to separate .h/.cpp file
+class CallConversionParameters
+{
+private:
+    ArgIterator* m_callerArgs;
+    ArgIterator* m_calleeArgs;
+    LPBYTE m_pCallerTransitionBlock;
+    LPBYTE m_pCalleeTransitionBlock;
+     
+
+public:
+    CallConversionParameters(ArgIterator* pCallerArgs, ArgIterator* pCalleeArgs, LPBYTE pCallerTransitionBlock, LPBYTE pCalleeTransitionBlock)
+    {
+        m_callerArgs = pCallerArgs;
+        m_calleeArgs = pCalleeArgs;
+        m_pCallerTransitionBlock = pCallerTransitionBlock;
+        m_pCalleeTransitionBlock = pCalleeTransitionBlock;
+    }
+
+    TADDR GetThisPointer()
+    {
+        if (m_callerArgs->HasThis() != m_calleeArgs->HasThis())
+            // TODO: failfast
+            COMPlusThrowHR(COR_E_BADIMAGEFORMAT);
+
+        if (m_calleeArgs->HasThis())
+        {
+            return *((TADDR*)(m_pCallerTransitionBlock + m_callerArgs->GetThisOffset()));
+        }
+        return NULL;
+    }
+
+    TADDR GetCallerReturnBuffer()
+    {
+        // If the return buffer is treated the same way for both calling conventions
+        if (m_callerArgs->HasRetBuffArg() == m_calleeArgs->HasRetBuffArg())
+        {
+            // Do nothing, or copy the ret buf arg around
+            if (m_callerArgs->HasRetBuffArg())
+            {
+                return *((TADDR*)(m_pCallerTransitionBlock + m_callerArgs->GetRetBuffArgOffset()));
+            }
+        }
+        else
+        {
+            // We'll need to create a return buffer, or assign into the return buffer when the actual call completes.
+            if (m_calleeArgs->HasRetBuffArg())
+            {
+                // TODO: Fix allocation hack and GC protect
+                TypeHandle thRetType;
+                bool forceByRefUnused;
+                void* callerRetBuffer = nullptr;
+
+                CorElementType returnType = m_callerArgs->GetReturnType(&thRetType, &forceByRefUnused);
+                UINT returnSize = MetaSig::GetElemSize(returnType, thRetType);
+                returnSize = (UINT)ALIGN_UP(returnSize, sizeof(LPVOID));
+
+                // Make sure buffer is nulled out
+                callerRetBuffer = malloc(returnSize);
+                _ASSERTE(callerRetBuffer != nullptr);
+                memset(callerRetBuffer, 0, returnSize);
+
+                return (TADDR)callerRetBuffer;
+            }
+        }
+
+        return NULL;
+    }
+
+    TADDR GetVarArgSigCookie()
+    {
+        if (m_calleeArgs->IsVarArg() != m_callerArgs->IsVarArg())
+        {
+            // TODO: failfast
+            COMPlusThrowHR(COR_E_BADIMAGEFORMAT);
+        }
+        if (m_calleeArgs->IsVarArg())
+        {
+            return *((TADDR*)(m_pCallerTransitionBlock + m_callerArgs->GetVASigCookieOffset()));
+        }
+
+        return NULL;
+    }
+
+    TADDR GetInstantiatingStubArgument()
+    {
+        if (m_calleeArgs->HasParamType() == m_callerArgs->HasParamType())
+        {
+            if (m_calleeArgs->HasParamType())
+            {
+                return *((TADDR*)(m_pCallerTransitionBlock + m_callerArgs->GetParamTypeArgOffset()));
+            }
+        }
+        else if (m_calleeArgs->HasParamType())
+        {
+            // TODO: compute instantiation pointer and return it
+            return (TADDR)0x12345678;
+            //_ASSERTE(_instantiatingStubArgument != nullptr);
+            //return _instantiatingStubArgument;
+        }
+        else
+        {
+            // TODO: assert case of USG->normal convertion where target is non-shareable MD, or failfast
+        }
+        return NULL;
+    }
+
+    //
+    // Converting by-ref values to non-by-ref form requires the converter to be capable of taking a pointer to a small integer
+    // value anywhere in memory and then copying the referenced value into an ABI-compliant pointer-sized "slot" which
+    // faithfully communicates the value.  In such cases, the argument slot prepared by the converter must conform to all
+    // sign/zero-extension rules mandated by the ABI.
+    //
+    // ARM32 requires all less-than-pointer-sized values to be sign/zero-extended when they are placed into pointer-sized
+    // slots (i.e., requires "producer-oriented" sign/zero-extension).  x86/amd64 do not have this requirement (i.e., the
+    // unused high bytes of the pointer-sized slot are ignored by the consumer and are allowed to take on any value); however
+    // to reduce the need for ever more #ifs in this file, this behavior will not be #if'd away. (Its not wrong, its just unnecessary)
+    //
+    static void ExtendingCopy(void* pSrcVoid, void* pDestVoid, CorElementType type, int typeSize)
+    {
+        byte* pSrc = (byte*)pSrcVoid;
+        byte* pDest = (byte*)pDestVoid;
+
+        if (SignExtendType(type))
+            SignExtend(pSrc, pDest, typeSize);
+        else if (ZeroExtendType(type))
+            ZeroExtend(pSrc, pDest, typeSize);
+        else
+            CopyMemory(pDest, pSrc, typeSize);
+    }
+
+    static bool SignExtendType(CorElementType type)
+    {
+        switch (type)
+        {
+        case ELEMENT_TYPE_I1:
+        case ELEMENT_TYPE_I2:
+#ifdef BIT64
+        case ELEMENT_TYPE_I4:
+#endif
+            return true;
+
+        }
+
+        return false;
+    }
+
+    static bool ZeroExtendType(CorElementType type)
+    {
+        switch (type)
+        {
+        case ELEMENT_TYPE_U1:
+        case ELEMENT_TYPE_BOOLEAN:
+        case ELEMENT_TYPE_CHAR:
+        case ELEMENT_TYPE_U2:
+#ifdef BIT64
+        case ELEMENT_TYPE_U4:
+#endif
+            return true;
+
+        }
+
+        return false;
+    }
+
+    static void SignExtend(void* pSrcVoid, void* pDestVoid, int size)
+    {
+        byte* pSrc = (byte*)pSrcVoid;
+        byte* pDest = (byte*)pDestVoid;
+
+        switch (size)
+        {
+        case 1:
+            *((TADDR*)pDest) = (TADDR)(*(signed char*)pSrc);
+            break;
+
+        case 2:
+            *((TADDR*)pDest) = (TADDR)(*(short*)pSrc);
+            break;
+
+#if BIT64
+            // On 64 bit platforms, a 32 bit parameter may require truncation/extension
+        case 4:
+            *((TADDR*)pDest) = (TADDR)(*(int*)pSrc);
+            break;
+#endif
+        default:
+            _ASSERTE(!"Should only be called for sizes where sign extension is a meaningful concept");
+            break;
+        }
+    }
+
+    static void ZeroExtend(void* pSrcVoid, void* pDestVoid, int size)
+    {
+        byte* pSrc = (byte*)pSrcVoid;
+        byte* pDest = (byte*)pDestVoid;
+
+        switch (size)
+        {
+        case 1:
+            *((TADDR*)pDest) = (TADDR)(*(uint8_t*)pSrc);
+            break;
+
+        case 2:
+            *((TADDR*)pDest) = (TADDR)(*(uint16_t*)pSrc);
+            break;
+
+#if BIT64
+            // On 64 bit platforms, a 32 bit parameter may require truncation/extension
+        case 4:
+            *((TADDR*)pDest) = (TADDR)(*(uint32_t*)pSrc);
+            break;
+#endif
+        default:
+            _ASSERTE(!"Should only be called for sizes where sign extension is a meaningful concept");
+            break;
+        }
+    }
+};
+
+#define CCCONVERTER_TRACE
+
 EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, ConverterThunkData* pData)
 {
     _ASSERTE(!IsUSG(pData->Method));
 
     PCODE pCode = NULL;
+    LPBYTE pCallerTransitionBlock = NULL;
+    LPBYTE pCalleeTransitionBlock = NULL;
+    unsigned fpReturnSize = 0;
+    CallDescrData callDescrData;
 
     MAKE_CURRENT_THREAD_AVAILABLE();
 
     INSTALL_MANAGED_EXCEPTION_DISPATCHER;
     INSTALL_UNWIND_AND_CONTINUE_HANDLER;
 
-    GCX_PREEMP_THREAD_EXISTS(CURRENT_THREAD);
-
-    MethodDesc* pTargetMD = NULL;
-
-    switch (pData->Kind)
+    MethodDesc* pTypicalMD = NULL;
+    PCODE pUSGCde = NULL;
+    if (pData->Kind == CONVERT_STANDARD_TO_GENERIC)
     {
-        case CONVERT_STANDARD_TO_GENERIC:
-        {
-            pTargetMD = pData->Method->LoadTypicalMethodDefinition();
-            printf("  ** CONVERT_STANDARD_TO_GENERIC  %s::%s\n", pData->Method->m_pszDebugClassName, pData->Method->m_pszDebugMethodName);
-            pCode = pTargetMD->DoPrestub(NULL);
-        }
-        break;
+        GCX_PREEMP_THREAD_EXISTS(CURRENT_THREAD);
+        pTypicalMD = pData->Method->LoadTypicalMethodDefinition();
+        pUSGCde = pTypicalMD->DoPrestub(NULL);
+    }
 
-    case CONVERT_GENERIC_TO_STANDARD:
+    //
+    // the incoming argument array is not gc-protected, so we 
+    // may not trigger a GC before we actually call managed code
+    //
+    //GCX_FORBID();
+
+    {
+        MethodDesc* pTargetMD = NULL;
+
+        MetaSig callerSig(pData->Method);
+        MetaSig calleeSig(pData->Method);
+
+        ArgIterator callerArgs(&callerSig);
+        ArgIterator calleeArgs(&calleeSig);
+
+        UINT numFixedArgsIncludingReturnType = callerSig.NumFixedArgs() + (UINT)1;
+        bool* pFocedByRefParams = new bool[numFixedArgsIncludingReturnType];
+        for (UINT i = 0; i < numFixedArgsIncludingReturnType; i++)
+            pFocedByRefParams[i] = true;
+
+        switch (pData->Kind)
         {
+        case CONVERT_STANDARD_TO_GENERIC:
+            pTargetMD = pTypicalMD;
+            pCode = pUSGCde;
+            printf("  ** CONVERT_STANDARD_TO_GENERIC  %s::%s\n", pData->Method->m_pszDebugClassName, pData->Method->m_pszDebugMethodName);
+
+            calleeSig.SetHasParamTypeArg();
+            calleeArgs = ArgIterator(&calleeSig, pFocedByRefParams, calleeSig.NumFixedArgs() + 1);
+            break;
+
+        case CONVERT_GENERIC_TO_STANDARD:
             // TODO: detect case where target == precode jump instruction, where target is normal->USG converter, and skip double conversion
 
             _ASSERTE(pData->Code != NULL);
             _ASSERT(pData->Method->IsVtableMethod());
 
+            // TODO: actual instantion needed?
             pTargetMD = pData->Method;
+            pCode = pData->Code;
+
+            callerSig.SetHasParamTypeArg();
+            callerArgs = ArgIterator(&callerSig, pFocedByRefParams, callerSig.NumFixedArgs() + 1);
 
             printf("  ** CONVERT_GENERIC_TO_STANDARD  %s::%s\n", pData->Method->m_pszDebugClassName, pData->Method->m_pszDebugMethodName);
-            pCode = pData->Code;
+
+            break;
         }
-        break;
-    }
+
+        DWORD   arg = 0;
+        UINT nStackBytes = calleeArgs.SizeOfFrameArgumentArray();
+
+        // Create a fake FramedMethodFrame on the stack.
+
+        // Note that SizeOfFrameArgumentArray does overflow checks with sufficient margin to prevent overflows here
+        DWORD dwAllocaSize = TransitionBlock::GetNegSpaceSize() + sizeof(TransitionBlock) + nStackBytes;
+        LPBYTE pAlloc = (LPBYTE)_alloca(dwAllocaSize);
+
+        pCallerTransitionBlock = (LPBYTE)pTransitionBlock;
+        pCalleeTransitionBlock = pAlloc + TransitionBlock::GetNegSpaceSize();
+
+        CallConversionParameters conversionParams = CallConversionParameters(&callerArgs, &calleeArgs, pCallerTransitionBlock, pCalleeTransitionBlock);
+
+        //
+        // Perform the conversion
+        //
+        {
+            //
+            // Setup some of the special parameters on the output transition block
+            //
+            TADDR thisPointer = conversionParams.GetThisPointer();
+            TADDR callerRetBuffer = conversionParams.GetCallerReturnBuffer();
+            TADDR VASigCookie = conversionParams.GetVarArgSigCookie();
+            TADDR instantiatingStubArgument = conversionParams.GetInstantiatingStubArgument();
+            {
+                _ASSERTE((thisPointer != NULL && calleeArgs.HasThis()) || (thisPointer == NULL && !calleeArgs.HasThis()));
+                if (thisPointer != NULL)
+                {
+                    *((TADDR*)(pCalleeTransitionBlock + calleeArgs.GetThisOffset())) = thisPointer;
+                }
+
+                _ASSERTE((callerRetBuffer != NULL && calleeArgs.HasRetBuffArg()) || (callerRetBuffer == NULL && !calleeArgs.HasRetBuffArg()));
+                if (callerRetBuffer != NULL)
+                {
+                    *((TADDR*)(pCalleeTransitionBlock + calleeArgs.GetRetBuffArgOffset())) = callerRetBuffer;
+                }
+
+                _ASSERTE((VASigCookie != NULL && calleeArgs.IsVarArg()) || (VASigCookie == NULL && !calleeArgs.IsVarArg()));
+                if (VASigCookie != NULL)
+                {
+                    *((TADDR*)(pCalleeTransitionBlock + calleeArgs.GetVASigCookieOffset())) = VASigCookie;
+                }
+
+                _ASSERTE((instantiatingStubArgument != NULL && calleeArgs.HasParamType()) || (instantiatingStubArgument == NULL && !calleeArgs.HasParamType()));
+                if (instantiatingStubArgument != NULL)
+                {
+                    *((TADDR*)(pCalleeTransitionBlock + calleeArgs.GetParamTypeArgOffset())) = instantiatingStubArgument;
+                }
+            }
+#ifdef CCCONVERTER_TRACE
+            if (thisPointer != NULL)                printf("    ThisPtr  = %#zx\n", thisPointer);
+            if (callerRetBuffer != NULL)            printf("    RetBuf   = %#zx\n", callerRetBuffer);
+            if (VASigCookie != NULL)                printf("    VASig    = %#zx\n", VASigCookie);
+            if (instantiatingStubArgument != NULL)  printf("    InstArg  = %#zx\n", instantiatingStubArgument);
+#endif
+
+            //
+            // Setup the rest of the parameters on the ouput transition block by copying them from the input transition block
+            //
+            int ofsCallee;
+            int ofsCaller;
+            TypeHandle thDummy;
+            TypeHandle thArgType;
+            TypeHandle thRetType;
+#ifdef CALLDESCR_FPARGREGS
+            FloatArgumentRegisters* pFloatArgumentRegisters = NULL;
+#endif
+            {
+                unsigned arg = 0;
+
+                while (true)
+                {
+                    // Setup argument offsets.
+                    ofsCallee = calleeArgs.GetNextOffset();
+                    ofsCaller = 0x7fffffff;
+
+                    // Check to see if we've handled all the arguments that we are to pass to the callee. 
+                    if (TransitionBlock::InvalidOffset == ofsCallee)
+                    {
+                        ofsCaller = callerArgs.GetNextOffset();
+
+                        if (TransitionBlock::InvalidOffset != ofsCaller)
+                            // TODO: failfast
+                            COMPlusThrowHR(COR_E_BADIMAGEFORMAT);
+
+                        break;
+                    }
+
+#ifdef CALLDESCR_FPARGREGS
+                    // Under CALLDESCR_FPARGREGS -ve offsets indicate arguments in floating point registers. If we
+                    // have at least one such argument we point the call worker at the floating point area of the
+                    // frame (we leave it null otherwise since the worker can perform a useful optimization if it
+                    // knows no floating point registers need to be set up).
+                    if ((ofsCallee < 0) && (pFloatArgumentRegisters == NULL))
+                        pFloatArgumentRegisters = (FloatArgumentRegisters*)(pCalleeTransitionBlock + TransitionBlock::GetOffsetOfFloatArgumentRegisters());
+#endif
+
+                    byte* pDest = pCalleeTransitionBlock + ofsCallee;
+                    byte* pSrc = NULL;
+
+                    int stackSizeCallee = 0x7fffffff;
+                    int stackSizeCaller = 0x7fffffff;
+
+                    bool isCalleeArgPassedByRef = false;
+                    bool isCallerArgPassedByRef = false;
+
+                    //
+                    // Compute size and pointer to caller's arg
+                    //
+                    {
+                        ofsCaller = callerArgs.GetNextOffset();
+                        pSrc = pCallerTransitionBlock + ofsCaller;
+
+                        stackSizeCallee = calleeArgs.GetArgSize();
+                        stackSizeCaller = callerArgs.GetArgSize();
+
+                        isCalleeArgPassedByRef = calleeArgs.IsArgPassedByRef();
+                        isCallerArgPassedByRef = callerArgs.IsArgPassedByRef();
+                    }
+                    _ASSERTE(stackSizeCallee == stackSizeCaller);
+
+                    if (isCalleeArgPassedByRef == isCallerArgPassedByRef)
+                    {
+                        // Argument copies without adjusting calling convention.
+                        if (isCalleeArgPassedByRef)
+                        {
+                            *((TADDR*)pDest) = *(TADDR*)pSrc;
+                        }
+                        else
+                        {
+                            CorElementType argElemType = calleeArgs.GetArgType(&thArgType);
+                            CallConversionParameters::ExtendingCopy(pSrc, pDest, argElemType, stackSizeCaller);
+                        }
+                    }
+                    else
+                    {
+                        // Calling convention adjustment. Used to handle conversion from universal shared generic form to standard 
+                        // calling convention and vice versa
+                        if (isCalleeArgPassedByRef)
+                        {
+                            // Pass as the byref pointer a pointer to the position in the transition block of the input argument
+                            *((TADDR*)pDest) = (TADDR)pSrc;
+                        }
+                        else
+                        {
+                            // Copy into the destination the data pointed at by the pointer in the source(caller) data.
+                            byte* pRealSrc = *(byte * *)pSrc;
+                            CorElementType argElemType = calleeArgs.GetArgType(&thArgType);
+                            CallConversionParameters::ExtendingCopy(pRealSrc, pDest, argElemType, stackSizeCaller);
+                        }
+                    }
+
+#ifdef CCCONVERTER_TRACE
+                    if (isCalleeArgPassedByRef)
+                        printf("    Arg%d byref = %#zx - StackSize = %d\n", arg, *(TADDR*)pDest, stackSizeCallee);
+                    else
+                        printf("    Arg%d       = %#zx - StackSize = %d\n", arg, *(TADDR*)pDest, stackSizeCallee);
+#endif
+
+                    arg++;
+                }
+            }
+
+            fpReturnSize = calleeArgs.GetFPReturnSize();
+        }
+
+
+        delete[] pFocedByRefParams;
+
+        _ASSERTE(pCode != NULL);
+
+
+        callDescrData.pSrc = pCallerTransitionBlock + sizeof(TransitionBlock);
+        callDescrData.numStackSlots = nStackBytes / STACK_ELEM_SIZE;
+#ifdef CALLDESCR_ARGREGS
+        callDescrData.pArgumentRegisters = (ArgumentRegisters*)(pCallerTransitionBlock + TransitionBlock::GetOffsetOfArgumentRegisters());
+#endif
+#ifdef CALLDESCR_FPARGREGS
+        callDescrData.pFloatArgumentRegisters = pFloatArgumentRegisters;
+#endif
+#ifdef CALLDESCR_REGTYPEMAP
+        callDescrData.dwRegTypeMap = 0;
+#endif
+        callDescrData.fpReturnSize = fpReturnSize;
+        callDescrData.pTarget = pCode;
+
+#ifdef CALLDESCR_RETBUFFARGREG
+        /*if (callerArgs.HasRetBuffArg() == calleeArgs.HasRetBuffArg())
+        {
+            // If there is a return buffer in use, the function doesn't really return anything in the normal 
+            // return value registers, but CallDescrThunk will always copy a pointer sized chunk into the 
+            // ret buf. Make that ok by giving it a valid location to stash bits.
+            callDescrData.pReturnBuffer = (void*)(pCallerTransitionBlock + callerArgs.GetRetBuffArgOffset());
+        }
+        else if (calleeArgs.HasRetBuffArg())
+        {
+            // This is the case when the caller doesn't have a return buffer argument, but the callee does.
+            // In that case the return value captured by CallDescrWorker is ignored.
+
+            // When CallDescrWorkerInternal is called, have it return values into a temporary unused buffer
+            // In actuality its returning its return information into the return value block already, but that return buffer
+            // was setup as a passed in argument instead of being filled in by the CallDescrWorker function directly.
+            callDescrData.pReturnBuffer = (void*)& returnBlockForIgnoredData;
+        }
+        else
+        {
+            // If there is no return buffer explictly in use by the callee, return to a buffer which is conservatively reported
+            // by the universal transition frame.
+
+            // This is the case where HasRetBuffArg is false for the callee, but the caller has a return buffer.
+            // In this case we need to capture the direct return value from callee into a buffer which may contain
+            // a gc reference (or not), and then once the call is complete, copy the value into the return buffer
+            // passed by the caller. (Do not directly use the return buffer provided by the caller, as CallDescrWorker
+            // does not properly use a write barrier, and the actual return buffer provided may be on the GC heap.)
+            callDescrData.pReturnBuffer = (void*)(pCallerTransitionBlock + TransitionBlock.GetOffsetOfReturnValuesBlock());
+        }
+
+        //callDescrData.pRetBuffArg = (UINT64*)(pCallerTransitionBlock + TransitionBlock::GetRetBuffArgOffset());*/
+#endif
+
+    } // End GCX_FORBID
+
 
     UNINSTALL_UNWIND_AND_CONTINUE_HANDLER;
     UNINSTALL_MANAGED_EXCEPTION_DISPATCHER;
 
-    _ASSERTE(pCode != NULL);
 
-    CallDescrData callDescrData;
-
-    callDescrData.pSrc = ((BYTE*)pTransitionBlock) + sizeof(TransitionBlock);
-    callDescrData.numStackSlots = 4;// nStackBytes / STACK_ELEM_SIZE;
-#ifdef CALLDESCR_ARGREGS
-    callDescrData.pArgumentRegisters = (ArgumentRegisters*)(pTransitionBlock + TransitionBlock::GetOffsetOfArgumentRegisters());
-#endif
-#ifdef CALLDESCR_RETBUFFARGREG
-    callDescrData.pRetBuffArg = (UINT64*)(pTransitionBlock + TransitionBlock::GetOffsetOfRetBuffArgReg());
-#endif
-#ifdef CALLDESCR_FPARGREGS
-    callDescrData.pFloatArgumentRegisters = NULL;
-#endif
-#ifdef CALLDESCR_REGTYPEMAP
-    callDescrData.dwRegTypeMap = 0;
-#endif
-    callDescrData.fpReturnSize = 0;// argit.GetFPReturnSize();
-    callDescrData.pTarget = pCode;
-
+    //////////////////////////////////////////////////////////////
+    ////  Call the Callee
+    //////////////////////////////////////////////////////////////
     CallDescrWorker(&callDescrData);
+
+
     
     // HACK with return value
     return *callDescrData.returnValue;
