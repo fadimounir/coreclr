@@ -7871,6 +7871,59 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
             assert(call->gtFlags & GTF_CALL_NULLCHECK);
             call->gtFlags &= ~GTF_CALL_NULLCHECK;
         }
+
+        // Most likely this is a HACK for delegate invokes from USG
+        if (callInfo->callConverterKind != 0)
+        {
+            GenTree* thisPtr = impPopStack().val;
+
+            GenTree* thisPtrCopy;
+            thisPtr = impCloneExpr(thisPtr, &thisPtrCopy, NO_CLASS_HANDLE, (unsigned)CHECK_SPILL_ALL,
+                nullptr DEBUGARG("LDVIRTFTN this pointer"));
+
+            // Get the delegate target
+
+            GenTree* delegateTarget = new (this, GT_LEA) 
+                GenTreeAddrMode(TYP_REF, thisPtr, nullptr, 0, eeGetEEInfo()->offsetOfDelegateFirstTarget);
+
+            delegateTarget = gtNewOperNode(GT_IND, TYP_REF, delegateTarget);
+
+            // Extract the proper thisPtr for the delegate invoke
+
+            GenTree* newThisAddr = new (this, GT_LEA)
+                GenTreeAddrMode(TYP_BYREF, thisPtrCopy, nullptr, 0, eeGetEEInfo()->offsetOfDelegateInstance);
+
+            impPushOnStack(gtNewOperNode(GT_IND, TYP_REF, newThisAddr), typeInfo());
+
+            // Load the method handle for the converter
+
+            GenTree* delegateInvokeMethodDesc = impTokenToHandle(pResolvedToken);
+
+            // Invoke the converter helper
+
+            GenTreeArgList* helpArgs = gtNewArgList(
+                delegateTarget,
+                delegateInvokeMethodDesc,
+                new (this, GT_CNS_INT) GenTreeIntCon(TYP_UINT, callInfo->callConverterKind));
+
+            GenTree* fptr = gtNewHelperCallNode(CORINFO_HELP_CALL_CONVERTER_THUNK, TYP_I_IMPL, helpArgs);
+
+            unsigned lclNum2 = lvaGrabTemp(true DEBUGARG("Delegate invoke through call converter"));
+            impAssignTempGen(lclNum2, fptr, (unsigned)CHECK_SPILL_ALL);
+            fptr = gtNewLclvNode(lclNum2, TYP_I_IMPL);
+
+            ((GenTreeCall*)call)->gtCallType = CT_INDIRECT;
+            ((GenTreeCall*)call)->gtCallMethHnd = (CORINFO_METHOD_HANDLE)fptr;
+            ((GenTreeCall*)call)->gtCallArgs = args;
+
+            if (args)
+            {
+                call->gtFlags |= (args->gtFlags & GTF_ALL_EFFECT);
+            }
+
+            // Remove delegate flag
+            call->gtCall.gtCallMoreFlags &= ~GTF_CALL_M_DELEGATE_INV;
+        }
     }
 
     CORINFO_CLASS_HANDLE actualMethodRetTypeSigClass;
