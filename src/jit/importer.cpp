@@ -18367,11 +18367,7 @@ void Compiler::impCanInlineIL(CORINFO_METHOD_HANDLE fncHandle,
 {
     unsigned codeSize = methInfo->ILCodeSize;
 
-    // HACK (for USG)
-    inlineResult->NoteFatal(InlineObservation::CALLEE_IS_NOINLINE);
-    return;
-
-    /*// We shouldn't have made up our minds yet...
+    // We shouldn't have made up our minds yet...
     assert(!inlineResult->IsDecided());
 
     if (methInfo->EHcount)
@@ -18438,7 +18434,7 @@ void Compiler::impCanInlineIL(CORINFO_METHOD_HANDLE fncHandle,
     if (inlineResult->IsFailure())
     {
         return;
-    }*/
+    }
 }
 
 /*****************************************************************************
