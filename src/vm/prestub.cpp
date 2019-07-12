@@ -2381,6 +2381,26 @@ static PCODE PatchNonVirtualExternalMethod(MethodDesc * pMD, PCODE pCode, PTR_CO
     return pCode;
 }
 
+#ifdef FEATURE_READYTORUN
+TADDR GetFirstArgumentRegisterValuePtr(TransitionBlock* pTransitionBlock)
+{
+    TADDR pArgument = (TADDR)pTransitionBlock + TransitionBlock::GetOffsetOfArgumentRegisters();
+#ifdef _TARGET_X86_
+    // x86 is special as always
+    pArgument += offsetof(ArgumentRegisters, ECX);
+#endif
+
+    return pArgument;
+}
+
+TADDR GetSecondArgumentRegisterValue(TransitionBlock* pTransitionBlock)
+{
+    // TODO: Other architectures
+    TADDR pArgumentRegisters = (TADDR)pTransitionBlock + TransitionBlock::GetOffsetOfArgumentRegisters();
+    return ((ArgumentRegisters*)pArgumentRegisters)->RDX;
+}
+#endif
+
 //==========================================================================================
 // In NGen images calls to external methods start out pointing to jump thunks.
 // These jump thunks initially point to the assembly code _ExternalMethodFixupStub
@@ -2509,11 +2529,17 @@ EXTERN_C PCODE STDCALL ExternalMethodFixupWorker(TransitionBlock * pTransitionBl
 
         CORCOMPILE_CONVERTER_KIND converterKind = CONVERT_INVALID;
 
+        SigTypeContext instantiatedTypeContext;
+#ifdef FEATURE_READYTORUN
         if (kind == ENCODE_LOAD_CONVERTER_THUNK)
         {
             converterKind = (CORCOMPILE_CONVERTER_KIND)(*pBlob++);
             kind = *pBlob++;
+
+            MethodTable* pContextMT = *(MethodTable**)GetFirstArgumentRegisterValuePtr(pTransitionBlock);
+            instantiatedTypeContext = SigTypeContext(pContextMT->GetInstantiation(), Instantiation());
         }
+#endif
 
         TypeHandle th;
         switch (kind)
@@ -2578,7 +2604,7 @@ EXTERN_C PCODE STDCALL ExternalMethodFixupWorker(TransitionBlock * pTransitionBl
 
         case ENCODE_VIRTUAL_ENTRY:
             {
-                pMD = ZapSig::DecodeMethod(pModule, pInfoModule, pBlob, &th);
+                pMD = ZapSig::DecodeMethod(pModule, pInfoModule, pBlob, &instantiatedTypeContext, &th);
 
         VirtualEntry:
                 pMD->PrepareForUseAsADependencyOfANativeImage();
@@ -2602,7 +2628,7 @@ EXTERN_C PCODE STDCALL ExternalMethodFixupWorker(TransitionBlock * pTransitionBl
         case ENCODE_VIRTUAL_ENTRY_DEF_TOKEN:
             {
                 mdToken MethodDef = TokenFromRid(CorSigUncompressData(pBlob), mdtMethodDef);
-                pMD = MemberLoader::GetMethodDescFromMethodDef(pInfoModule, MethodDef, FALSE);
+                pMD = MemberLoader::GetMethodDescFromMethodDef(pInfoModule, MethodDef, instantiatedTypeContext.m_classInst, instantiatedTypeContext.m_methodInst,  FALSE);
 
                 goto VirtualEntry;
             }
@@ -2613,8 +2639,7 @@ EXTERN_C PCODE STDCALL ExternalMethodFixupWorker(TransitionBlock * pTransitionBl
 
                 FieldDesc * pFD = NULL;
 
-                SigTypeContext typeContext;
-                MemberLoader::GetDescFromMemberRef(pInfoModule, MemberRef, &pMD, &pFD, &typeContext, FALSE /* strict metadata checks */, &th, TRUE /* actual type required */);
+                MemberLoader::GetDescFromMemberRef(pInfoModule, MemberRef, &pMD, &pFD, &instantiatedTypeContext, FALSE /* strict metadata checks */, &th, TRUE /* actual type required */);
                 _ASSERTE(pMD != NULL);
 
                 goto VirtualEntry;
@@ -2623,7 +2648,7 @@ EXTERN_C PCODE STDCALL ExternalMethodFixupWorker(TransitionBlock * pTransitionBl
         case ENCODE_VIRTUAL_ENTRY_SLOT:
             {
                 slot = CorSigUncompressData(pBlob);
-                pMT =  ZapSig::DecodeType(pModule, pInfoModule, pBlob).GetMethodTable();
+                pMT =  ZapSig::DecodeType(pModule, pInfoModule, pBlob, CLASS_LOADED, &instantiatedTypeContext).GetMethodTable();
 
                 fVirtual = true;
                 break;
@@ -2696,8 +2721,10 @@ EXTERN_C PCODE STDCALL ExternalMethodFixupWorker(TransitionBlock * pTransitionBl
             }
         }
 
+#ifdef FEATURE_READYTORUN
         if (converterKind != CONVERT_INVALID)
         {
+            // TODO: cases where pMD is null (ENCODE_VIRTUAL_ENTRY_SLOT)
             _ASSERTE(fVirtual && pMD != NULL && pMD->IsVtableMethod());
 
             GCX_PREEMP_THREAD_EXISTS(CURRENT_THREAD);
@@ -2710,6 +2737,7 @@ EXTERN_C PCODE STDCALL ExternalMethodFixupWorker(TransitionBlock * pTransitionBl
             pCode = MakeCallConverterThunkStub(pData)->GetEntryPoint();
             *EnsureWritableExecutablePages((TADDR*)pIndirection) = pCode;
         }
+#endif
 
 #if defined (FEATURE_JIT_PITCHING)
         DeleteFromPitchingCandidate(pMD);
@@ -2953,24 +2981,6 @@ static PCODE getHelperForStaticBase(Module * pModule, CORCOMPILE_FIXUP_BLOB_KIND
     }
 
     return pHelper;
-}
-
-TADDR GetFirstArgumentRegisterValuePtr(TransitionBlock * pTransitionBlock)
-{
-    TADDR pArgument = (TADDR)pTransitionBlock + TransitionBlock::GetOffsetOfArgumentRegisters();
-#ifdef _TARGET_X86_
-    // x86 is special as always
-    pArgument += offsetof(ArgumentRegisters, ECX);
-#endif
-
-    return pArgument;
-}
-
-TADDR GetSecondArgumentRegisterValue(TransitionBlock* pTransitionBlock)
-{
-    // TODO: Other architectures
-    TADDR pArgumentRegisters = (TADDR)pTransitionBlock + TransitionBlock::GetOffsetOfArgumentRegisters();
-    return ((ArgumentRegisters*)pArgumentRegisters)->RDX;
 }
 
 void ProcessDynamicDictionaryLookup(TransitionBlock *           pTransitionBlock, 
