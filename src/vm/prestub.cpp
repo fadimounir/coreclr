@@ -1610,48 +1610,6 @@ Stub * MakeUnboxingStubWorker(MethodDesc *pMD)
     RETURN pstub;
 }
 
-// HACK
-bool IsUSG(MethodTable* pMT)
-{
-    if (pMT == g_pUniversalCanonMethodTableClass)
-        return true;
-
-    if (!pMT->HasInstantiation())
-        return false;
-
-    Instantiation inst = pMT->GetInstantiation();
-    for (DWORD i = 0; i < inst.GetNumArgs(); i++)
-    {
-        if (inst[i].IsTypeDesc())
-            continue;
-        if (IsUSG(inst[i].AsMethodTable()))
-            return true;
-    }
-
-    return false;
-}
-
-bool IsUSG(MethodDesc* pMD)
-{
-    if (IsUSG(pMD->GetMethodTable()))
-        return true;
-
-    if (!pMD->HasMethodInstantiation())
-        return false;
-
-    Instantiation inst = pMD->GetMethodInstantiation();
-    for (DWORD i = 0; i < inst.GetNumArgs(); i++)
-    {
-        if (inst[i].IsTypeDesc())
-            continue;
-        if (IsUSG(inst[i].AsMethodTable()))
-            return true;
-    }
-
-    return false;
-}
-// END OF HACK
-
 #if defined(FEATURE_SHARE_GENERIC_CODE) 
 Stub* MakeCallConverterThunkStub(ConverterThunkData* pData)
 {
@@ -1945,16 +1903,14 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
     // Running a prestub on a method causes us to access its MethodTable
     g_IBCLogger.LogMethodDescAccess(this);
 
-    if (ContainsGenericVariables())
+
+    // We're using typical definitions to represent universal canonical methods when running the prestub.
+    bool fIsUniversalCanonicalMethod = HasClassOrMethodInstantiation() && IsTypicalMethodDefinition();
+    _ASSERTE(!fIsUniversalCanonicalMethod || (IsIL() || IsNoMetadata() || IsFCall()));
+
+    if (ContainsGenericVariables() && !fIsUniversalCanonicalMethod)
     {
-        if (IsTypicalMethodDefinition() && GetModule()->IsReadyToRun())
-        {
-            // This is a valid case: we're using typical definitions to represent universal canonical methods when running the prestub.
-        }
-        else
-        {
-            COMPlusThrow(kInvalidOperationException, IDS_EE_CODEEXECUTION_CONTAINSGENERICVAR);
-        }
+        COMPlusThrow(kInvalidOperationException, IDS_EE_CODEEXECUTION_CONTAINSGENERICVAR);
     }
 
     /**************************   DEBUG CHECKS  *************************/
@@ -2074,7 +2030,7 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
 
     /**************************   BACKPATCHING   *************************/
     // See if the addr of code has changed from the pre-stub
-    if (!fIsPointingToPrestub && (!HasClassOrMethodInstantiation() || !(IsTypicalMethodDefinition() || IsUSG(this))))
+    if (!fIsPointingToPrestub && !fIsUniversalCanonicalMethod)
     {
         LOG((LF_CLASSLOADER, LL_INFO10000,
                 "    In PreStubWorker, method already jitted, backpatching call point\n"));
@@ -2155,7 +2111,7 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
 
     if (pCode != NULL && GetModule()->IsReadyToRun() && GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
     {
-        if (IsTypicalMethodDefinition() || IsUSG(this))
+        if (fIsUniversalCanonicalMethod)
         {
             SetCodeEntryPoint(pCode);
             RETURN pCode;
@@ -2246,6 +2202,12 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
 
     _ASSERTE(!IsPointingToPrestub());
     _ASSERTE(HasStableEntryPoint());
+
+    if (fIsUniversalCanonicalMethod)
+    {
+        // TODO: DoBackpatch doesn't expect typical instantiations (special case for USG)
+        RETURN pCode;
+    }
 
     RETURN DoBackpatch(pMT, pDispatchingMT, FALSE);
 }
@@ -2536,7 +2498,9 @@ EXTERN_C PCODE STDCALL ExternalMethodFixupWorker(TransitionBlock * pTransitionBl
             converterKind = (CORCOMPILE_CONVERTER_KIND)(*pBlob++);
             kind = *pBlob++;
 
-            MethodTable* pContextMT = *(MethodTable**)GetFirstArgumentRegisterValuePtr(pTransitionBlock);
+            // TODO: getting context from other than thisPtr
+            TADDR pArgument = GetFirstArgumentRegisterValuePtr(pTransitionBlock);
+            MethodTable* pContextMT = (*(Object**)pArgument)->GetMethodTable();
             instantiatedTypeContext = SigTypeContext(pContextMT->GetInstantiation(), Instantiation());
         }
 #endif
@@ -3310,7 +3274,7 @@ PCODE DynamicHelperFixup(TransitionBlock * pTransitionBlock, TADDR * pCell, DWOR
             // case ENCODE_VIRTUAL_ENTRY_REF_TOKEN:
             // case ENCODE_VIRTUAL_ENTRY_SLOT:
                 {
-                    if (pMD->HasClassOrMethodInstantiation() && (pMD->IsTypicalMethodDefinition() || IsUSG(pMD)))
+                    if (pMD->HasClassOrMethodInstantiation() && pMD->IsTypicalMethodDefinition())
                     {
                         // TODO: investigate
                         DebugBreak();
@@ -3427,12 +3391,12 @@ PCODE DynamicHelperFixup(TransitionBlock * pTransitionBlock, TADDR * pCell, DWOR
 
                 PCODE pTargetPtr = pMD->GetMultiCallableAddrOfCode();
 
-                if (pMD->HasClassOrMethodInstantiation() && (pMD->IsTypicalMethodDefinition() || IsUSG(pMD)))
+                if (pMD->HasClassOrMethodInstantiation() && pMD->IsTypicalMethodDefinition())
                 {
                     // We should only use a function pointer in the universal generics case, where the function pointer is
                     // the result of a generic dictionary lookup
                     pTargetPtr = GetSecondArgumentRegisterValue(pTransitionBlock);
-                    // assert the target is real somehow
+                    // TODO: assert the target is real somehow
                 }
 
                 if (ctorData.pArg3 != NULL)
@@ -3825,7 +3789,7 @@ public:
 
 EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, ConverterThunkData* pData)
 {
-    _ASSERTE(!IsUSG(pData->Method));
+    _ASSERTE(!pData->Method->IsTypicalMethodDefinition());
 
     PCODE pCode = NULL;
     LPBYTE pCallerTransitionBlock = NULL;
@@ -3896,7 +3860,7 @@ EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, Co
             break;
         }
 
-        DWORD   arg = 0;
+        DWORD arg = 0;
         UINT nStackBytes = calleeArgs.SizeOfFrameArgumentArray();
 
         // Create a fake FramedMethodFrame on the stack.
@@ -3909,6 +3873,11 @@ EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, Co
         pCalleeTransitionBlock = pAlloc + TransitionBlock::GetNegSpaceSize();
 
         CallConversionParameters conversionParams = CallConversionParameters(&callerArgs, &calleeArgs, pCallerTransitionBlock, pCalleeTransitionBlock);
+
+#ifdef CALLDESCR_REGTYPEMAP
+        UINT64 dwRegTypeMap = 0;
+        BYTE* pMap = (BYTE*)& dwRegTypeMap;
+#endif
 
         //
         // Perform the conversion
@@ -4049,6 +4018,12 @@ EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, Co
                         }
                     }
 
+#ifdef CALLDESCR_REGTYPEMAP
+                    // enable later: FillInRegTypeMap(ofsCallee, calleeArgs.GetArgType(), pMap);
+                    // use this hack instead for now since we use the caller TB
+                    FillInRegTypeMap(ofsCaller, callerArgs.GetArgType(), pMap);
+#endif
+
 #ifdef CCCONVERTER_TRACE
                     if (isCalleeArgPassedByRef)
                         printf("    Arg%d byref = %#zx - StackSize = %d\n", arg, *(TADDR*)pDest, stackSizeCallee);
@@ -4078,7 +4053,7 @@ EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, Co
         callDescrData.pFloatArgumentRegisters = pFloatArgumentRegisters;
 #endif
 #ifdef CALLDESCR_REGTYPEMAP
-        callDescrData.dwRegTypeMap = 0;
+        callDescrData.dwRegTypeMap = dwRegTypeMap;
 #endif
         callDescrData.fpReturnSize = fpReturnSize;
         callDescrData.pTarget = pCode;

@@ -7872,10 +7872,11 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
             call->gtFlags &= ~GTF_CALL_NULLCHECK;
         }
 
-        // Most likely this is a HACK for delegate invokes from USG
+        // Most likely this is a HACK for delegate invokes from USG... Doesn't work when the function
+        // takes parameters
         if (callInfo->callConverterKind != 0)
         {
-            GenTree* thisPtr = impPopStack().val;
+            GenTree* thisPtr = impStackTop().val;
 
             GenTree* thisPtrCopy;
             thisPtr = impCloneExpr(thisPtr, &thisPtrCopy, NO_CLASS_HANDLE, (unsigned)CHECK_SPILL_ALL,
@@ -7893,7 +7894,7 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
             GenTree* newThisAddr = new (this, GT_LEA)
                 GenTreeAddrMode(TYP_BYREF, thisPtrCopy, nullptr, 0, eeGetEEInfo()->offsetOfDelegateInstance);
 
-            impPushOnStack(gtNewOperNode(GT_IND, TYP_REF, newThisAddr), typeInfo());
+            GenTree* newThis = gtNewOperNode(GT_IND, TYP_REF, newThisAddr);
 
             // Load the method handle for the converter
 
@@ -7911,6 +7912,10 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
             unsigned lclNum2 = lvaGrabTemp(true DEBUGARG("Delegate invoke through call converter"));
             impAssignTempGen(lclNum2, fptr, (unsigned)CHECK_SPILL_ALL);
             fptr = gtNewLclvNode(lclNum2, TYP_I_IMPL);
+
+            // Replace delegate thisPtr with target thisPtr on stack
+            impPopStack();
+            impPushOnStack(newThis, typeInfo());
 
             ((GenTreeCall*)call)->gtCallType = CT_INDIRECT;
             ((GenTreeCall*)call)->gtCallMethHnd = (CORINFO_METHOD_HANDLE)fptr;

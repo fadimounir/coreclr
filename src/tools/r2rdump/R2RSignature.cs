@@ -1058,10 +1058,6 @@ namespace R2RDump
                     builder.Append("__Canon");
                     break;
 
-                case CorElementType.ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG:
-                    builder.Append("__UniversalCanon");
-                    break;
-
                 case CorElementType.ELEMENT_TYPE_MODULE_ZAPSIG:
                     {
                         int moduleIndex = (int)ReadUIntAndEmitInlineSignatureBinary(builder);

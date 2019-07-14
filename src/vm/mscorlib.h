@@ -603,7 +603,6 @@ DEFINE_METHOD(DOUBLE,               GET_HASH_CODE,          GetHashCode, IM_RetI
 DEFINE_METHOD(SINGLE,               GET_HASH_CODE,          GetHashCode, IM_RetInt)
 
 DEFINE_CLASS(__CANON,              System,                 __Canon)
-DEFINE_CLASS(__UNIVERSALCANON,     System,                 __UniversalCanon)
 
 
 #ifdef FEATURE_COMINTEROP

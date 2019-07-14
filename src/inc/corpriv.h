@@ -251,8 +251,6 @@ typedef enum CorElementTypeZapSig
     ELEMENT_TYPE_CANON_ZAPSIG            = 0x3e,     // zapsig encoding for [mscorlib]System.__Canon
     ELEMENT_TYPE_MODULE_ZAPSIG           = 0x3f,     // zapsig encoding for external module id#
 
-    ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG   = 70,       // zapsig encoding for [mscorlib]System.__UniversalCanon
-
 } CorElementTypeZapSig;
 
 typedef enum CorCallingConventionInternal

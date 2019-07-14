@@ -372,7 +372,6 @@ GPTR_DECL(EEConfig,         g_pConfig);             // configuration data (from 
 GPTR_DECL(MethodTable,      g_pObjectClass);
 GPTR_DECL(MethodTable,      g_pRuntimeTypeClass);
 GPTR_DECL(MethodTable,      g_pCanonMethodTableClass);  // System.__Canon
-GPTR_DECL(MethodTable,      g_pUniversalCanonMethodTableClass);  // System.__UniversalCanon
 GPTR_DECL(MethodTable,      g_pStringClass);
 #ifdef FEATURE_UTF8STRING
 GPTR_DECL(MethodTable,      g_pUtf8StringClass);

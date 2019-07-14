@@ -1187,18 +1187,6 @@ TypeHandle SigPointer::GetTypeHandleThrowing(
             break;
         }
 
-        case ELEMENT_TYPE_UNIVERSALCANON_ZAPSIG:
-        {
-#ifndef DACCESS_COMPILE
-            assert(g_pUniversalCanonMethodTableClass != NULL);
-            thRet = TypeHandle(g_pUniversalCanonMethodTableClass);
-#else
-            DacNotImpl();
-            thRet = TypeHandle();
-#endif
-            break;
-        }
-
         case ELEMENT_TYPE_MODULE_ZAPSIG:
         {
 #ifndef DACCESS_COMPILE
