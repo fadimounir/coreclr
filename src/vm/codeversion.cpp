@@ -17,6 +17,8 @@
 #include "../debug/ee/controller.h"
 #endif // FEATURE_CODE_VERSIONING
 
+#pragma optimize("", off)
+
 #ifndef FEATURE_CODE_VERSIONING
 
 //
@@ -2281,6 +2283,7 @@ PCODE CodeVersionManager::PublishVersionableCodeIfNecessary(MethodDesc* pMethodD
 {
     STANDARD_VM_CONTRACT;
     _ASSERTE(!LockOwnedByCurrentThread());
+    _ASSERTE(!pMethodDesc->ContainsGenericVariables());
     _ASSERTE(pMethodDesc->IsVersionable());
     _ASSERTE(!pMethodDesc->IsPointingToPrestub() || !pMethodDesc->IsVersionableWithJumpStamp());
 
@@ -2434,7 +2437,14 @@ HRESULT CodeVersionManager::PublishNativeCodeVersion(MethodDesc* pMethod, Native
             }
             else
             {
-                pMethod->SetCodeEntryPoint(pCode);
+                if (pMethod->GetModule()->IsReadyToRun() && pMethod->GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
+                {
+                    pMethod->ResetCodeEntryPoint();
+                }
+                else
+                {
+                    pMethod->SetCodeEntryPoint(pCode);
+                }
             }
         }
         EX_CATCH_HRESULT(hr);

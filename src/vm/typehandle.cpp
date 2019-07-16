@@ -36,6 +36,8 @@
 // If mscorlib is ngenned, Module::RestoreMethodTablePointer() needs 
 // a TypeHandle to call ClassLoader::EnsureLoaded().
 //
+#pragma optimize("", off)
+
 
 #if 0
 

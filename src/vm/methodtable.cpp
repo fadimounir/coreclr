@@ -67,6 +67,8 @@
 #include "interpreter.h"
 #endif // FEATURE_INTERPRETER
 
+#pragma optimize("", off)
+
 #ifndef DACCESS_COMPILE
 
 // Typedef for string comparition functions.
@@ -2170,6 +2172,8 @@ BOOL MethodTable::IsClassPreInited()
 #ifdef _MSC_VER
 #pragma optimize("", on)
 #endif // _MSC_VER
+
+#pragma optimize("", off)
 
 //========================================================================================
 
@@ -9532,6 +9536,8 @@ VOID MethodTable::EnsureActive()
 #ifdef _MSC_VER
 #pragma optimize("", on)
 #endif // _MSC_VER
+
+#pragma optimize("", off)
 
 //==========================================================================================
 CHECK MethodTable::CheckInstanceActivated()

@@ -16,6 +16,9 @@
 #include "compile.h"
 #include "sigbuilder.h"
 
+#pragma optimize("", off)
+
+
 #ifndef DACCESS_COMPILE
 
 BOOL ZapSig::GetSignatureForTypeDesc(TypeDesc * desc, SigBuilder * pSigBuilder)

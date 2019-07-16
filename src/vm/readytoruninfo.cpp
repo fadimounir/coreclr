@@ -20,6 +20,8 @@
 
 using namespace NativeFormat;
 
+#pragma optimize("", off)
+
 IMAGE_DATA_DIRECTORY * ReadyToRunInfo::FindSection(DWORD type)
 {
     CONTRACTL

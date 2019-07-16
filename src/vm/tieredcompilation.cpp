@@ -58,6 +58,8 @@
 // errors are limited to OS resource exhaustion or poorly behaved managed code
 // (for example within an AssemblyResolve event or static constructor triggered by the JIT).
 
+#pragma optimize("", off)
+
 #if defined(FEATURE_TIERED_COMPILATION) && !defined(DACCESS_COMPILE)
 
 // Called at AppDomain construction
@@ -714,6 +716,7 @@ BOOL TieredCompilationManager::CompileCodeVersion(NativeCodeVersion nativeCodeVe
     EX_TRY
     {
         pCode = pMethod->PrepareCode(nativeCodeVersion);
+        printf("TieredCompilation: RECOMPILED %s::%s\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName);
         LOG((LF_TIEREDCOMPILATION, LL_INFO10000, "TieredCompilationManager::CompileCodeVersion Method=0x%pM (%s::%s), code version id=0x%x, code ptr=0x%p\n",
             pMethod, pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName,
             nativeCodeVersion.GetVersionId(),
@@ -790,6 +793,7 @@ void TieredCompilationManager::ActivateCodeVersion(NativeCodeVersion nativeCodeV
         }
         ThreadSuspend::RestartEE(FALSE, TRUE);
     }
+    printf("TieredCompilation: ACTIVATED %s::%s\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName);
     if (FAILED(hr))
     {
         STRESS_LOG2(LF_TIEREDCOMPILATION, LL_INFO10, "TieredCompilationManager::ActivateCodeVersion: Method %pM failed to publish native code for native code version %d\n",

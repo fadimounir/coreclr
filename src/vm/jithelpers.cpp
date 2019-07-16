@@ -55,6 +55,9 @@
 
 #include "runtimehandles.h"
 
+#pragma optimize("", off)
+
+
 //========================================================================
 //
 // This file contains implementation of all JIT helpers. The helpers are

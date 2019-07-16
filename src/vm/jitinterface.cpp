@@ -66,6 +66,9 @@
 #include "perfmap.h"
 #endif
 
+#pragma optimize("", off)
+
+
 // The Stack Overflow probe takes place in the COOPERATIVE_TRANSITION_BEGIN() macro
 //
 

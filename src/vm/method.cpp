@@ -49,6 +49,9 @@ GVAL_IMPL(DWORD, g_MiniMetaDataBuffMaxSize);
 GVAL_IMPL(TADDR, g_MiniMetaDataBuffAddress);
 #endif // FEATURE_MINIMETADATA_IN_TRIAGEDUMPS
 
+#pragma optimize("", off)
+
+
 // forward decl
 bool FixupSignatureContainingInternalTypes(
     DataImage *     image, 
@@ -5081,11 +5084,6 @@ void MethodDesc::SetMethodEntryPoint(PCODE addr)
 {
     WRAPPER_NO_CONTRACT;
     _ASSERTE(addr != NULL);
-
-    if (strcmp(GetModule()->GetSimpleName(), "console") == 0)
-    {
-        DebugBreak();
-    }
 
     // Similarly to GetMethodEntryPoint(), it is up to the caller to ensure that calls to this function are appropriately
     // synchronized. Currently, the only caller synchronizes with the following lock.

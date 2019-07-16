@@ -11,6 +11,8 @@
 //
 // ============================================================================
 
+#pragma optimize("", off)
+
 
 #ifndef _TYPEHANDLE_INL_
 #define _TYPEHANDLE_INL_

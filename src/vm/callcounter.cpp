@@ -14,6 +14,8 @@
 #include "tieredcompilation.h"
 #include "callcounter.h"
 
+#pragma optimize("", off)
+
 #ifdef FEATURE_TIERED_COMPILATION
 #ifndef DACCESS_COMPILE
 

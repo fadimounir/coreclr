@@ -18,6 +18,9 @@
 #include "genericdict.h"
 #include "threadstatics.h"
 
+#pragma optimize("", off)
+
+
 //==========================================================================================
 inline PTR_EEClass MethodTable::GetClass_NoLogging()
 {

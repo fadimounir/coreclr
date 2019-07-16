@@ -32,6 +32,9 @@
 #include "sigbuilder.h"
 #include "compile.h"
 
+#pragma optimize("", off)
+
+
 #ifndef DACCESS_COMPILE 
 
 //---------------------------------------------------------------------------------------

@@ -25,6 +25,9 @@
 #include <corhlprpriv.h>
 #include "argdestination.h"
 
+#pragma optimize("", off)
+
+
 /*******************************************************************/
 const CorTypeInfo::CorTypeInfoEntry CorTypeInfo::info[ELEMENT_TYPE_MAX] = 
 {

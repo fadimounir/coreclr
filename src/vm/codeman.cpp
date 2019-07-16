@@ -42,6 +42,8 @@
 #include "perfmap.h"
 #endif
 
+#pragma optimize("", off)
+
 // Default number of jump stubs in a jump stub block
 #define DEFAULT_JUMPSTUBS_PER_BLOCK  32
 
