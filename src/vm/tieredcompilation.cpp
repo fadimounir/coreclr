@@ -716,7 +716,10 @@ BOOL TieredCompilationManager::CompileCodeVersion(NativeCodeVersion nativeCodeVe
     EX_TRY
     {
         pCode = pMethod->PrepareCode(nativeCodeVersion);
-        printf("TieredCompilation: RECOMPILED %s::%s\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName);
+        
+        if (strcmp(pMethod->GetModule()->GetSimpleName(), "console") == 0)
+            printf("\033[1;36m >> TieredCompilation: RECOMPILED %s::%s\n\033[0m", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName);
+
         LOG((LF_TIEREDCOMPILATION, LL_INFO10000, "TieredCompilationManager::CompileCodeVersion Method=0x%pM (%s::%s), code version id=0x%x, code ptr=0x%p\n",
             pMethod, pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName,
             nativeCodeVersion.GetVersionId(),
@@ -793,7 +796,10 @@ void TieredCompilationManager::ActivateCodeVersion(NativeCodeVersion nativeCodeV
         }
         ThreadSuspend::RestartEE(FALSE, TRUE);
     }
-    printf("TieredCompilation: ACTIVATED %s::%s\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName);
+    
+    if (!FAILED(hr) && strcmp(pMethod->GetModule()->GetSimpleName(), "console") == 0)
+        printf("\033[1;36m >> TieredCompilation: ACTIVATED %s::%s\n\033[0m", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName);
+
     if (FAILED(hr))
     {
         STRESS_LOG2(LF_TIEREDCOMPILATION, LL_INFO10, "TieredCompilationManager::ActivateCodeVersion: Method %pM failed to publish native code for native code version %d\n",

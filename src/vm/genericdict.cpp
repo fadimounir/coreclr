@@ -796,13 +796,13 @@ Dictionary::PopulateEntry(
         {
             switch (kind)
             {
-            case TypeHandleSlot: printf("  DICT LOOKUP {TypeHandleSlot}\n"); break;
-            case MethodDescSlot: printf("  DICT LOOKUP {MethodDescSlot}\n"); break;
-            case MethodEntrySlot: printf("  DICT LOOKUP {MethodEntrySlot}\n"); break;
-            case ConstrainedMethodEntrySlot: printf("  DICT LOOKUP {ConstrainedMethodEntrySlot}\n"); break;
-            case DispatchStubAddrSlot: printf("  DICT LOOKUP {DispatchStubAddrSlot}\n"); break;
-            case FieldDescSlot: printf("  DICT LOOKUP {FieldDescSlot}\n"); break;
-            case DeclaringTypeHandleSlot: printf("  DICT LOOKUP {DeclaringTypeHandleSlot}\n"); break;
+            case TypeHandleSlot:                printf("\033[1;32m  > DICT LOOKUP {TypeHandleSlot} -> "); break;
+            case MethodDescSlot:                printf("\033[1;32m  > DICT LOOKUP {MethodDescSlot} -> "); break;
+            case MethodEntrySlot:               printf("\033[1;32m  > DICT LOOKUP {MethodEntrySlot} -> "); break;
+            case ConstrainedMethodEntrySlot:    printf("\033[1;32m  > DICT LOOKUP {ConstrainedMethodEntrySlot} -> "); break;
+            case DispatchStubAddrSlot:          printf("\033[1;32m  > DICT LOOKUP {DispatchStubAddrSlot} -> "); break;
+            case FieldDescSlot:                 printf("\033[1;32m  > DICT LOOKUP {FieldDescSlot}\n"); break;
+            case DeclaringTypeHandleSlot:       printf("\033[1;32m  > DICT LOOKUP {DeclaringTypeHandleSlot} -> "); break;
             }
         }
 
@@ -862,7 +862,7 @@ Dictionary::PopulateEntry(
             result = (CORINFO_GENERIC_HANDLE)th.AsPtr();
 
             if (logDebug)
-                printf("    > RES = MethodTable {%s} = %#zx\n", th.AsMethodTable()->GetDebugClassName(), (ULONG_PTR)result);
+                printf("MethodTable {%s} = %#zx\n\033[0m", th.AsMethodTable()->GetDebugClassName(), (ULONG_PTR)result);
 
             break;
         }
@@ -1085,6 +1085,9 @@ Dictionary::PopulateEntry(
                 PCODE addr = pMgr->GetCallStub(ownerType, methodSlot);
 
                 result = (CORINFO_GENERIC_HANDLE)pMgr->GenerateStubIndirection(addr);
+                if (logDebug)
+                    printf("GenerateStubIndirection {slot %d on %s} = %#zx\n\033[0m", methodSlot, ownerType.GetMethodTable()->GetDebugClassName(), (ULONG_PTR)result);
+
                 break;
 #endif // CROSSGEN_COMPILE
             }
@@ -1190,6 +1193,9 @@ Dictionary::PopulateEntry(
 #endif
 
                 result = (CORINFO_GENERIC_HANDLE)pResolvedMD->GetMultiCallableAddrOfCode();
+
+                if (logDebug)
+                    printf("GetMultiCallableAddrOfCode {%s::%s} = %#zx\n\033[0m", pResolvedMD->m_pszDebugClassName, pResolvedMD->m_pszDebugMethodName, (ULONG_PTR)result);
             }
             else
             if (kind == MethodEntrySlot)
@@ -1197,7 +1203,7 @@ Dictionary::PopulateEntry(
                 result = (CORINFO_GENERIC_HANDLE)pMethod->GetMultiCallableAddrOfCode();
 
                 if (logDebug)
-                    printf("    > RES = GetMultiCallableAddrOfCode {%s::%s} = %#zx\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG_PTR)result);
+                    printf("GetMultiCallableAddrOfCode {%s::%s} = %#zx\n\033[0m", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG_PTR)result);
             }
             else
             if (kind == DispatchStubAddrSlot)
@@ -1208,7 +1214,7 @@ Dictionary::PopulateEntry(
                 result = (CORINFO_GENERIC_HANDLE)ppCode;
 
                 if (logDebug)
-                    printf("    > RES = GetMultiCallableAddrOfCode {%s::%s} = %#zx\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG_PTR)result);
+                    printf("GetMultiCallableAddrOfCode {%s::%s} = %#zx\n\033[0m", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG_PTR)result);
             }
             else
             {
@@ -1216,7 +1222,7 @@ Dictionary::PopulateEntry(
                 result = (CORINFO_GENERIC_HANDLE)pMethod;
 
                 if (logDebug)
-                    printf("    > RES = MethodDesc {%s::%s} = %#zx\n", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG_PTR)result);
+                    printf("MethodDesc {%s::%s} = %#zx\n\033[0m", pMethod->m_pszDebugClassName, pMethod->m_pszDebugMethodName, (ULONG_PTR)result);
             }
             break;
         }
@@ -1236,7 +1242,7 @@ Dictionary::PopulateEntry(
                 result = (CORINFO_GENERIC_HANDLE)pField;
 
                 if (logDebug)
-                    printf("    > RES = FieldDesc {%s} = %#zx\n", pField->GetDebugName(), (ULONG_PTR)result);
+                    printf("FieldDesc {%s} = %#zx\n\033[0m", pField->GetDebugName(), (ULONG_PTR)result);
             }
             else
             {

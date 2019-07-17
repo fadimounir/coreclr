@@ -42,6 +42,9 @@
 
 #define CHECK_APP_DOMAIN    0
 
+#pragma optimize("", off)
+
+
 //-----------------------------------------------------------------------
 #if _DEBUG
 //-----------------------------------------------------------------------
@@ -1593,6 +1596,8 @@ void UMThkCallFrame::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
 #if defined(_MSC_VER) && defined(_TARGET_X86_)
 #pragma optimize("y", on)   // Small critical routines, don't put in EBP frame 
 #endif
+#pragma optimize("", off)
+
 
 // Initialization of HelperMethodFrame.
 void HelperMethodFrame::Push()
@@ -1650,6 +1655,8 @@ void HelperMethodFrame::Pop()
 #if defined(_MSC_VER) && defined(_TARGET_X86_)
 #pragma optimize("", on)     // Go back to command line default optimizations
 #endif
+#pragma optimize("", off)
+
 
 NOINLINE void HelperMethodFrame::PushSlowHelper()
 {

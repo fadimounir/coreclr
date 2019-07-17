@@ -4997,6 +4997,9 @@ void MethodDesc::SetCodeEntryPoint(PCODE entryPoint)
     WRAPPER_NO_CONTRACT;
     _ASSERTE(entryPoint != NULL);
 
+    if (strcmp(GetModule()->GetSimpleName(), "console") == 0)
+        printf("\033[1;36m >> SetCodeEntryPoint = %#zx for %s::%s\n\033[0m", entryPoint, m_pszDebugClassName, m_pszDebugMethodName);
+
     if (MayHaveEntryPointSlotsToBackpatch())
     {
         BackpatchEntryPointSlots(entryPoint);

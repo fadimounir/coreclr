@@ -275,6 +275,8 @@ FRAME_TYPE_NAME(AssumeByrefFromJITStack)
 #define FRAMES_TURNED_FPO_ON 1
 #endif
 
+#pragma optimize("", off)
+
 #include "util.hpp"
 #include "vars.hpp"
 #include "regdisp.h"
@@ -923,6 +925,10 @@ inline CONTEXT * GETREDIRECTEDCONTEXT(Thread * thread) { LIMITED_METHOD_CONTRACT
 
 class TransitionFrame : public Frame
 {
+    // TODO: USG: Consider forced byref parameters/returnbuffer when using MetaSig
+    // parsing of the function's signature for the various APIs that access the 
+    // transition block
+
     VPTR_ABSTRACT_VTABLE_CLASS(TransitionFrame, Frame)
 
 public:

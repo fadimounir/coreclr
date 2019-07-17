@@ -477,7 +477,12 @@ PCODE MethodDesc::GetPrecompiledCode(PrepareCodeConfig* pConfig)
                     m_pszDebugMethodSignature,
                     GetMemberDef()));
 
-            pConfig->SetNativeCode(pCode, &pCode);
+            if (!GetModule()->IsReadyToRun() || !GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
+            {
+                // Do not set the method's entry point to this universal canonical entry point now, as this might require a
+                // calling convention conversion, depending on the caller's convention
+                pConfig->SetNativeCode(pCode, &pCode);
+            }
         }
     }
 #endif // FEATURE_READYTORUN
@@ -1638,6 +1643,21 @@ Stub* MakeCallConverterThunkStub(ConverterThunkData* pData)
     sl.EmitCallConverterThunk((UINT_PTR)pData);
     Stub* pstub = sl.Link(pData->Method->GetLoaderAllocator()->GetStubHeap());
 
+    char* debugConverterName = (char*)"UNKNOWN!!";
+    switch (pData->Kind)
+    {
+    case CONVERT_STANDARD_TO_GENERIC: debugConverterName = (char*)"STANDARD_TO_GENERIC"; break;
+    case CONVERT_GENERIC_TO_STANDARD: debugConverterName = (char*)"GENERIC_TO_STANDARD"; break;
+    }
+
+    printf("\033[1;36m >> MakeCallConverterThunkStub %s (%d) = %#zx for %#zx (%s::%s)\n\033[0m", 
+        debugConverterName,
+        pData->Kind, 
+        pstub->GetEntryPoint(), 
+        pData->Code, 
+        pData->Method->m_pszDebugClassName, 
+        pData->Method->m_pszDebugMethodName);
+
     RETURN pstub;
 }
 
@@ -1772,7 +1792,7 @@ extern "C" PCODE STDCALL PreStubWorker(TransitionBlock * pTransitionBlock, Metho
 
     if (strcmp(pMD->GetModule()->GetSimpleName(), "console") == 0)
     {
-        printf("  PRESTUB  %s::%s\n", pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName);
+        printf("\033[0;31m  PRESTUB  %s::%s\n\033[0m", pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName);
     }
 
     CONSISTENCY_CHECK(GetAppDomain()->CheckCanExecuteManagedCode(pMD));
@@ -1885,59 +1905,80 @@ static void TestSEHGuardPageRestore()
 }
 #endif // _DEBUG
 
-PCODE HandleUniversalCanonicalEntryPoint(PCODE pCode, MethodDesc* pMethod, PCODE* ppResultCode, Stub** ppResultStub)
+PCODE HandleUniversalCanonicalEntryPoint(PCODE pCode, MethodDesc* pPrestubMethod, MethodDesc* pNonUniversalCanonicalMethod, PCODE* ppResultCode, Stub** ppResultStub)
 {
     CONTRACT(PCODE)
     {
         STANDARD_VM_CHECK;
-        PRECONDITION(pCode != NULL && pMethod != NULL);
+        PRECONDITION(pCode != NULL && pPrestubMethod != NULL && pNonUniversalCanonicalMethod != NULL);
+        PRECONDITION(pPrestubMethod->HasSameMethodDefAs(pNonUniversalCanonicalMethod));
+        PRECONDITION(pNonUniversalCanonicalMethod->HasClassOrMethodInstantiation() && !pNonUniversalCanonicalMethod->IsTypicalMethodDefinition());
         PRECONDITION(ppResultCode != NULL && ppResultStub != NULL);
         POSTCONDITION(RETVAL != NULL);
     }
     CONTRACT_END;
 
-    Module* pModule = pMethod->GetModule();
+    Module* pModule = pPrestubMethod->GetModule();
+    bool fIsUSGPrestubMethod = pPrestubMethod->HasClassOrMethodInstantiation() && pPrestubMethod->IsTypicalMethodDefinition();
+    bool fIsUSGEntryPoint = pModule->IsReadyToRun() && pModule->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode);
 
-    if (pModule->IsReadyToRun() && pModule->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
+    if (fIsUSGPrestubMethod)
     {
-        bool fIsCallingFromUniversalGenericCaller = pMethod->HasClassOrMethodInstantiation() && pMethod->IsTypicalMethodDefinition();
-
-        if (fIsCallingFromUniversalGenericCaller)
+        if (!fIsUSGEntryPoint)
         {
-            *ppResultCode = pCode;
-            *ppResultStub = NULL;
-            RETURN pCode;
+            // pCode is a jitted method, or non-USG readytorun code, so we need to convert
+            // to the standard convention first
+            ConverterThunkData* pData = new ConverterThunkData();
+            pData->Code = pCode;
+            pData->Kind = CONVERT_GENERIC_TO_STANDARD;
+            pData->Method = pNonUniversalCanonicalMethod;
+
+            *ppResultStub = MakeCallConverterThunkStub(pData);
+            *ppResultCode = NULL;
+            RETURN(*ppResultStub)->GetEntryPoint();
         }
+    }
+    else
+    {
+        if (fIsUSGEntryPoint)
+        {
+            // These two methods should be the same here
+            _ASSERTE(pPrestubMethod == pNonUniversalCanonicalMethod);
 
-        ConverterThunkData* pData = new ConverterThunkData();
-        pData->Code = pCode;
-        pData->Kind = CONVERT_STANDARD_TO_GENERIC;
-        pData->Method = pMethod;
+            ConverterThunkData* pData = new ConverterThunkData();
+            pData->Code = pCode;
+            pData->Kind = CONVERT_STANDARD_TO_GENERIC;
+            pData->Method = pNonUniversalCanonicalMethod;
 
-        *ppResultStub = MakeCallConverterThunkStub(pData);
-        *ppResultCode = NULL;
-        RETURN(*ppResultStub)->GetEntryPoint();
+            *ppResultStub = MakeCallConverterThunkStub(pData);
+            *ppResultCode = NULL;
+            RETURN(*ppResultStub)->GetEntryPoint();
 
-        // // Could not find a non-USG entry point. To use USG, we need to use an instantiating stub.
-        // // If the input method already requires an instantiating stub, then we assume that we're reaching
-        // // here from the instantiating stub that was previously prepared for the input method.
-        // // However if we reach here and the input method does not require an instantiating stub, this means
-        // // that the input method could not share generic code, but since we're going to use a USG codegen,
-        // // we need to wrap it with an instantiating stub.
-        // if (MethodShapeRequiresInstArgOnSharedGenericCode() && !RequiresInstArg() && !IsUSG(this))
-        // {
-        //     _ASSERT(!IsSharedByGenericInstantiations());
-        //     pStub = MakeInstantiatingStubForUniversalGenericTarget(this, pCode);
-        //     pStub = MakeCallConverterThunkStub(this, pStub->GetEntryPoint());
-        // }
-        // else
-        // {
-        //     pStub = MakeCallConverterThunkStub(this, pCode);
-        // }
-        // 
-        // pCode = NULL;
+
+            // TODO: USG: CONVERT_STANDARD_TO_GENERIC_INSTANTIATING
+
+            // // Could not find a non-USG entry point. To use USG, we need to use an instantiating stub.
+            // // If the input method already requires an instantiating stub, then we assume that we're reaching
+            // // here from the instantiating stub that was previously prepared for the input method.
+            // // However if we reach here and the input method does not require an instantiating stub, this means
+            // // that the input method could not share generic code, but since we're going to use a USG codegen,
+            // // we need to wrap it with an instantiating stub.
+            // if (MethodShapeRequiresInstArgOnSharedGenericCode() && !RequiresInstArg() && !IsUSG(this))
+            // {
+            //     _ASSERT(!IsSharedByGenericInstantiations());
+            //     pStub = MakeInstantiatingStubForUniversalGenericTarget(this, pCode);
+            //     pStub = MakeCallConverterThunkStub(this, pStub->GetEntryPoint());
+            // }
+            // else
+            // {
+            //     pStub = MakeCallConverterThunkStub(this, pCode);
+            // }
+            // 
+            // pCode = NULL;
+        }
     }
 
+    // No conversion needed if we reach here
     *ppResultCode = pCode;
     *ppResultStub = NULL;
     RETURN pCode;
@@ -1975,27 +2016,14 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
 
     // We're using typical definitions to represent universal canonical methods when running the prestub.
     bool fIsUniversalCanonicalMethod = HasClassOrMethodInstantiation() && IsTypicalMethodDefinition();
+    // This assert could be wrong, but keep it for now to catch unexpected scenarios, and investigate 
+    // if things look correct for those scenarios
     _ASSERTE(!fIsUniversalCanonicalMethod || (IsIL() || IsNoMetadata() || IsFCall()));
 
     if (ContainsGenericVariables() && !fIsUniversalCanonicalMethod)
     {
         COMPlusThrow(kInvalidOperationException, IDS_EE_CODEEXECUTION_CONTAINSGENERICVAR);
     }
-
-    /*PTR_VOID pInstArg = NULL;
-    FramedMethodFrame* pMethodFrame = NULL;
-    if (fIsUniversalCanonicalMethod)
-    {
-        MAKE_CURRENT_THREAD_AVAILABLE();
-        _ASSERTE(CURRENT_THREAD->GetFrame()->GetTransitionType() == Frame::ETransitionType::TT_M2U);
-        pMethodFrame = (FramedMethodFrame*)CURRENT_THREAD->GetFrame();
-
-
-        if (MethodShapeRequiresInstArgOnSharedGenericCode())
-            pInstArg = pMethodFrame->GetParamTypeArg();         // TODO: accound for return buffer for forced byref
-        else
-            pInstArg = pMethodFrame->GetThis()->GetMethodTable();
-    }*/
 
     /**************************   DEBUG CHECKS  *************************/
     /*-----------------------------------------------------------------
@@ -2077,7 +2105,45 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
         int a = 0; a++;
     }
 
-    // TODO: USG: call counting for instantiated MethodDesc when we're executing the prestub of a USG callee
+    MethodDesc* pMethodForCallCounting = this;
+    if (fIsUniversalCanonicalMethod)
+    {
+        MAKE_CURRENT_THREAD_AVAILABLE();
+        Frame* pCurFrame = CURRENT_THREAD->GetFrame();
+
+        if (pCurFrame->GetVTablePtr() == PrestubMethodFrame::GetMethodFrameVPtr() ||
+            pCurFrame->GetVTablePtr() == DynamicHelperFrame::GetMethodFrameVPtr())
+        {
+            GCX_COOP_THREAD_EXISTS(CURRENT_THREAD);
+
+            FramedMethodFrame* pMethodFrame = (FramedMethodFrame*)pCurFrame;
+            if (MethodShapeRequiresInstArgOnSharedGenericCode())
+            {
+                // TODO: USG: account for return buffer for forced byref. Need to update API implementation on TransitionFrame
+                if (HasMethodInstantiation())
+                {
+                    pMethodForCallCounting = (MethodDesc*)pMethodFrame->GetParamTypeArg();
+                }
+                else
+                {
+                    MethodTable* pContextMT = (MethodTable*)pMethodFrame->GetParamTypeArg();
+                    // TODO: USG: Need to call GetMethodTableMatchingParentClass? Assert for now...
+                    _ASSERTE(pContextMT->HasSameTypeDefAs(this->GetMethodTable()));
+                    pMethodForCallCounting = pContextMT->GetParallelMethodDesc(this);
+                }
+            }
+            else
+            {
+                _ASSERTE(!HasMethodInstantiation());
+                MethodTable* pContextMT = pMethodFrame->GetThis()->GetMethodTable();
+                pContextMT = pContextMT->GetMethodTableMatchingParentClass(this->GetMethodTable());
+                pMethodForCallCounting = pContextMT->GetParallelMethodDesc(this);
+            }
+        }
+    }
+
+    _ASSERTE(!fIsUniversalCanonicalMethod || (
+        pMethodForCallCounting->HasClassOrMethodInstantiation() && !pMethodForCallCounting->IsTypicalMethodDefinition()));
 
     /***************************   CALL COUNTER    ***********************/
     // If we are counting calls for tiered compilation, leave the prestub
@@ -2088,11 +2154,11 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
 #ifdef FEATURE_TIERED_COMPILATION
     BOOL fNeedsCallCounting = FALSE;
     TieredCompilationManager* pTieredCompilationManager = nullptr;
-    if (!fIsUniversalCanonicalMethod && IsEligibleForTieredCompilation() && CallCounter::IsEligibleForCallCounting(this))
+    if (pMethodForCallCounting->IsEligibleForTieredCompilation() && CallCounter::IsEligibleForCallCounting(pMethodForCallCounting))
     {
         pTieredCompilationManager = GetAppDomain()->GetTieredCompilationManager();
         BOOL fWasPromotedToNextTier = FALSE;
-        GetCallCounter()->OnMethodCalled(this, pTieredCompilationManager, &fCanBackpatchPrestub, &fWasPromotedToNextTier);
+        GetCallCounter()->OnMethodCalled(pMethodForCallCounting, pTieredCompilationManager, &fCanBackpatchPrestub, &fWasPromotedToNextTier);
         fNeedsCallCounting = !fWasPromotedToNextTier;
     }
 #endif
@@ -2102,16 +2168,15 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
     BOOL fIsPointingToPrestub = IsPointingToPrestub();
     bool fIsVersionableWithoutJumpStamp = false;
 #ifdef FEATURE_CODE_VERSIONING
-    fIsVersionableWithoutJumpStamp = IsVersionableWithoutJumpStamp();
-    if (!fIsUniversalCanonicalMethod && (fIsVersionableWithoutJumpStamp ||
-        (!fIsPointingToPrestub && IsVersionableWithJumpStamp())))
+    fIsVersionableWithoutJumpStamp = fIsUniversalCanonicalMethod ? pMethodForCallCounting->IsVersionableWithoutJumpStamp() : IsVersionableWithoutJumpStamp();
+    if (fIsVersionableWithoutJumpStamp || (!fIsPointingToPrestub && IsVersionableWithJumpStamp()))
     {
-        pCode = GetCodeVersionManager()->PublishVersionableCodeIfNecessary(this, fCanBackpatchPrestub);
+        pCode = GetCodeVersionManager()->PublishVersionableCodeIfNecessary(pMethodForCallCounting, fCanBackpatchPrestub);
 
 #ifdef FEATURE_TIERED_COMPILATION
         if (pTieredCompilationManager != nullptr && fNeedsCallCounting && fCanBackpatchPrestub && pCode != NULL)
         {
-            pTieredCompilationManager->OnMethodCallCountingStoppedWithoutTierPromotion(this);
+            pTieredCompilationManager->OnMethodCallCountingStoppedWithoutTierPromotion(pMethodForCallCounting);
         }
 #endif
 
@@ -2121,7 +2186,7 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
 
     /**************************   BACKPATCHING   *************************/
     // See if the addr of code has changed from the pre-stub
-    if (!fIsUniversalCanonicalMethod && !fIsPointingToPrestub)
+    if (!fIsPointingToPrestub && !fIsUniversalCanonicalMethod)
     {
         LOG((LF_CLASSLOADER, LL_INFO10000,
                 "    In PreStubWorker, method already jitted, backpatching call point\n"));
@@ -2137,7 +2202,10 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
         // prevented it or this thread lost the race with another thread in updating the
         // entry point. We should still short circuit and return the code without
         // backpatching.
-        RETURN HandleUniversalCanonicalEntryPoint(pCode, this, &pCode, &pStub);
+        if (HasClassOrMethodInstantiation())
+            RETURN HandleUniversalCanonicalEntryPoint(pCode, this, pMethodForCallCounting, &pCode, &pStub);
+        else
+            RETURN pCode;
     }
 
     /**************************   CODE CREATION  *************************/
@@ -2159,16 +2227,15 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
         }
         pCode = PrepareInitialCode();
 
-        if (pCode == NULL)
+        if (pCode == NULL && fIsUniversalCanonicalMethod)
         {
             // This can only happen when a universal canonical caller calls a universal canonical callee that doesn't have
             // precompiled R2R code. In this case, we need to get the instantiated MethodDesc, and call PrepareInitialCode
             // on that one. We might also need to wrap the entry point with a generic to standard call converter stub.
-            _ASSERT(fIsUniversalCanonicalMethod);
-            // TODO: USG: handle this case.
+            _ASSERT(pMethodForCallCounting != NULL && pMethodForCallCounting->HasClassOrMethodInstantiation() && !pMethodForCallCounting->IsTypicalMethodDefinition());
+            pCode = pMethodForCallCounting->PrepareInitialCode();
         }
-
-    } // end else if (IsIL() || IsNoMetadata())
+    }
     else if (IsNDirect())
     {
         pCode = GetStubForInteropMethod(this);
@@ -2205,9 +2272,9 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
     /**************************   POSTJIT *************************/
     _ASSERTE(pCode == NULL || GetNativeCode() == NULL || pCode == GetNativeCode());
 
-    if (pCode != NULL)
+    if (pCode != NULL && HasClassOrMethodInstantiation())
     {
-        HandleUniversalCanonicalEntryPoint(pCode, this, &pCode, &pStub);
+        HandleUniversalCanonicalEntryPoint(pCode, this, pMethodForCallCounting, &pCode, &pStub);
     }
 
     // At this point we must have either a pointer to managed code or to a stub. All of the above code
@@ -2269,8 +2336,11 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
 
     if (fIsUniversalCanonicalMethod)
     {
-        // TODO: USG: DoBackpatch doesn't expect typical instantiations (special case for USG)
-        RETURN pCode;
+        // TODO: USG: DoBackpatch doesn't expect typical instantiations. Need to figure out what to do here.
+        if (pCode != NULL)
+            RETURN pCode;
+        else
+            RETURN pStub->GetEntryPoint();
     }
 
     RETURN DoBackpatch(pMT, pDispatchingMT, FALSE);
@@ -3883,28 +3953,27 @@ EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, Co
         for (UINT i = 0; i < numFixedArgsIncludingReturnType; i++)
             pFocedByRefParams[i] = true;
 
+        char* debugConverterName = (char*)"UNKNOWN!!";
+
         switch (pData->Kind)
         {
         case CONVERT_STANDARD_TO_GENERIC:
-            printf("  ** CONVERT_STANDARD_TO_GENERIC  %s::%s\n", pData->Method->m_pszDebugClassName, pData->Method->m_pszDebugMethodName);
-
+            debugConverterName = (char*)"STANDARD_TO_GENERIC";
             calleeSig.SetHasParamTypeArg();
             calleeArgs = ArgIterator(&calleeSig, pFocedByRefParams, calleeSig.NumFixedArgs() + 1);
             break;
 
         case CONVERT_GENERIC_TO_STANDARD:
+            debugConverterName = (char*)"GENERIC_TO_STANDARD";
             // TODO: USG Future: detect case where target == precode jump instruction, where target is normal->USG converter, and skip double conversion
-
-            _ASSERTE(pData->Code != NULL);
-            _ASSERT(pData->Method->IsVtableMethod());
 
             callerSig.SetHasParamTypeArg();
             callerArgs = ArgIterator(&callerSig, pFocedByRefParams, callerSig.NumFixedArgs() + 1);
 
-            printf("  ** CONVERT_GENERIC_TO_STANDARD  %s::%s\n", pData->Method->m_pszDebugClassName, pData->Method->m_pszDebugMethodName);
-
             break;
         }
+
+        printf("\033[1;33m  ** Converter: %s: %s::%s -> %#zx\n\033[0m", debugConverterName, pData->Method->m_pszDebugClassName, pData->Method->m_pszDebugMethodName, pData->Code);
 
         DWORD arg = 0;
         UINT nStackBytes = calleeArgs.SizeOfFrameArgumentArray();
@@ -3925,6 +3994,8 @@ EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, Co
         BYTE* pMap = (BYTE*)& dwRegTypeMap;
 #endif
 
+//Disabled for now
+#if 0
         //
         // Perform the conversion
         //
@@ -4083,7 +4154,7 @@ EXTERN_C PCODE STDCALL CallConverterWorker(TransitionBlock* pTransitionBlock, Co
 
             fpReturnSize = calleeArgs.GetFPReturnSize();
         }
-
+#endif
 
         delete[] pFocedByRefParams;
 

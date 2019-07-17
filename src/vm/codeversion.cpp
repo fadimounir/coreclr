@@ -2770,7 +2770,10 @@ bool CodeVersionManager::IsMethodSupported(PTR_MethodDesc pMethodDesc)
         !pMethodDesc->GetLoaderAllocator()->IsCollectible() &&
 
         // EnC has its own way of versioning
-        !pMethodDesc->IsEnCMethod();
+        !pMethodDesc->IsEnCMethod() &&
+
+        // Universal generics are not versionable (represented by typical method definitions)
+        (!pMethodDesc->HasClassOrMethodInstantiation() || !pMethodDesc->IsTypicalMethodDefinition());
 }
 
 //---------------------------------------------------------------------------------------
