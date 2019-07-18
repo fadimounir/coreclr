@@ -1681,6 +1681,12 @@ Stub* MakeInstantiatingStubForUniversalGenericTarget(MethodDesc* pMD, PCODE pTar
     sl.EmitInstantiatingMethodStub(pMD, extraArg, pTargetCode);
     Stub* pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
 
+    printf("\033[1;36m >> MakeInstantiatingStubForUniversalGenericTarget = %#zx for %#zx (%s::%s)\n\033[0m",
+        pstub->GetEntryPoint(),
+        pTargetCode,
+        pMD->m_pszDebugClassName,
+        pMD->m_pszDebugMethodName);
+
     RETURN pstub;
 }
 
@@ -1945,6 +1951,16 @@ PCODE HandleUniversalCanonicalEntryPoint(PCODE pCode, MethodDesc* pPrestubMethod
             // These two methods should be the same here
             _ASSERTE(pPrestubMethod == pNonUniversalCanonicalMethod);
 
+            // TODO: USG: CONVERT_STANDARD_TO_GENERIC_INSTANTIATING and delete MakeInstantiatingStubForUniversalGenericTarget
+            if (pPrestubMethod->MethodShapeRequiresInstArgOnSharedGenericCode() && !pPrestubMethod->RequiresInstArg())
+            {
+                // To use USG, we need to use an instantiating stub. If the input method does not require an instantiating stub,
+                // this means it does not share generic code, but since we're going to use a USG codegen, we need to insert a generic
+                // context argument in the call.
+                _ASSERT(!pPrestubMethod->IsSharedByGenericInstantiations());
+                pCode = MakeInstantiatingStubForUniversalGenericTarget(pPrestubMethod, pCode)->GetEntryPoint();
+            }
+
             ConverterThunkData* pData = new ConverterThunkData();
             pData->Code = pCode;
             pData->Kind = CONVERT_STANDARD_TO_GENERIC;
@@ -1953,28 +1969,6 @@ PCODE HandleUniversalCanonicalEntryPoint(PCODE pCode, MethodDesc* pPrestubMethod
             *ppResultStub = MakeCallConverterThunkStub(pData);
             *ppResultCode = NULL;
             RETURN(*ppResultStub)->GetEntryPoint();
-
-
-            // TODO: USG: CONVERT_STANDARD_TO_GENERIC_INSTANTIATING
-
-            // // Could not find a non-USG entry point. To use USG, we need to use an instantiating stub.
-            // // If the input method already requires an instantiating stub, then we assume that we're reaching
-            // // here from the instantiating stub that was previously prepared for the input method.
-            // // However if we reach here and the input method does not require an instantiating stub, this means
-            // // that the input method could not share generic code, but since we're going to use a USG codegen,
-            // // we need to wrap it with an instantiating stub.
-            // if (MethodShapeRequiresInstArgOnSharedGenericCode() && !RequiresInstArg() && !IsUSG(this))
-            // {
-            //     _ASSERT(!IsSharedByGenericInstantiations());
-            //     pStub = MakeInstantiatingStubForUniversalGenericTarget(this, pCode);
-            //     pStub = MakeCallConverterThunkStub(this, pStub->GetEntryPoint());
-            // }
-            // else
-            // {
-            //     pStub = MakeCallConverterThunkStub(this, pCode);
-            // }
-            // 
-            // pCode = NULL;
         }
     }
 
@@ -2103,6 +2097,11 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
     if (strcmp(GetModule()->GetSimpleName(), "console") == 0 && HasClassOrMethodInstantiation())
     {
         int a = 0; a++;
+
+        if (MethodShapeRequiresInstArgOnSharedGenericCode())
+        {
+            int b = 0; b++;
+        }
     }
 
     MethodDesc* pMethodForCallCounting = this;
@@ -2122,11 +2121,13 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
                 // TODO: USG: account for return buffer for forced byref. Need to update API implementation on TransitionFrame
                 if (HasMethodInstantiation())
                 {
-                    pMethodForCallCounting = (MethodDesc*)pMethodFrame->GetParamTypeArg();
+                    //pMethodForCallCounting = (MethodDesc*)pMethodFrame->GetParamTypeArg();
+                    pMethodForCallCounting = (MethodDesc*)pMethodFrame->GetArgumentRegisters()->RCX;
                 }
                 else
                 {
-                    MethodTable* pContextMT = (MethodTable*)pMethodFrame->GetParamTypeArg();
+                    //MethodTable* pContextMT = (MethodTable*)pMethodFrame->GetParamTypeArg();
+                    MethodTable* pContextMT = (MethodTable*)pMethodFrame->GetArgumentRegisters()->RCX;
                     // TODO: USG: Need to call GetMethodTableMatchingParentClass? Assert for now...
                     _ASSERTE(pContextMT->HasSameTypeDefAs(this->GetMethodTable()));
                     pMethodForCallCounting = pContextMT->GetParallelMethodDesc(this);
@@ -3188,7 +3189,8 @@ void ProcessDynamicDictionaryLookup(TransitionBlock *           pTransitionBlock
     // are used for the dictionary index, and the lower 16 bits for the slot number.
     *pDictionaryIndexAndSlot = (pContextMT == NULL ? 0 : pContextMT->GetNumDicts() - 1);
     *pDictionaryIndexAndSlot <<= 16;
-    
+
+#if 0
     WORD dictionarySlot;
 
     if (kind == ENCODE_DICTIONARY_LOOKUP_METHOD)
@@ -3231,6 +3233,10 @@ void ProcessDynamicDictionaryLookup(TransitionBlock *           pTransitionBlock
             *pDictionaryIndexAndSlot |= dictionarySlot;
         }
     }
+#else
+    // TODO: USG: Support for dictionary layout access for non-shareable code
+    pResult->signature = (BYTE*)pBlobStart;
+#endif
 }
 
 PCODE DynamicHelperFixup(TransitionBlock * pTransitionBlock, TADDR * pCell, DWORD sectionIndex, Module * pModule, CORCOMPILE_FIXUP_BLOB_KIND * pKind, TypeHandle * pTH, MethodDesc ** ppMD, FieldDesc ** ppFD)
