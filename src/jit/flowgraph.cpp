@@ -7486,7 +7486,12 @@ GenTree* Compiler::fgOptimizeDelegateConstructor(GenTreeCall*            call,
 
             GenTree*        thisPointer       = call->gtCallObjp;
             GenTree*        targetObjPointers = call->gtCallArgs->Current();
-            GenTreeArgList* helperArgs        = gtNewArgList(thisPointer, oper == GT_FTN_ADDR ? targetObjPointers : targetMethod);
+
+            GenTreeArgList* helperArgs;
+            if(oper == GT_FTN_ADDR)
+                helperArgs = gtNewArgList(thisPointer, targetObjPointers);
+            else
+                helperArgs = gtNewArgList(thisPointer, targetObjPointers, targetMethod);
 
             call = gtNewHelperCallNode(CORINFO_HELP_READYTORUN_DELEGATE_CTOR, TYP_VOID, helperArgs);
 

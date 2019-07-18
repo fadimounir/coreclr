@@ -2489,11 +2489,11 @@ TADDR GetFirstArgumentRegisterValuePtr(TransitionBlock* pTransitionBlock)
     return pArgument;
 }
 
-TADDR GetSecondArgumentRegisterValue(TransitionBlock* pTransitionBlock)
+TADDR GetThirdArgumentRegisterValue(TransitionBlock* pTransitionBlock)
 {
     // TODO: USG: Other architectures
     TADDR pArgumentRegisters = (TADDR)pTransitionBlock + TransitionBlock::GetOffsetOfArgumentRegisters();
-    return ((ArgumentRegisters*)pArgumentRegisters)->RDX;
+    return ((ArgumentRegisters*)pArgumentRegisters)->R8;
 }
 #endif
 
@@ -3523,7 +3523,7 @@ PCODE DynamicHelperFixup(TransitionBlock * pTransitionBlock, TADDR * pCell, DWOR
                 {
                     // We should only use a function pointer in the universal generics case, where the function pointer is
                     // the result of a generic dictionary lookup
-                    pTargetPtr = GetSecondArgumentRegisterValue(pTransitionBlock);
+                    pTargetPtr = GetThirdArgumentRegisterValue(pTransitionBlock);
                 }
 
                 if (ctorData.pArg3 != NULL)
