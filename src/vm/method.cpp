@@ -1704,7 +1704,25 @@ BOOL MethodDesc::MethodShapeRequiresInstArgOnSharedGenericCode()
 {
     LIMITED_METHOD_DAC_CONTRACT;
 
-    return (HasMethodInstantiation() || IsStatic() || GetMethodTable()->IsValueType() || (GetMethodTable()->IsInterface() && !IsAbstract()));
+    return HasMethodInstantiation() || (HasClassInstantiation() && (IsStatic() || GetMethodTable()->IsValueType() || (GetMethodTable()->IsInterface() && !IsAbstract())));
+}
+
+BOOL MethodDesc::RequiresConversionsForUniversalGenericCode()
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+    }
+    CONTRACTL_END
+        
+    if (!HasClassOrMethodInstantiation())
+        return FALSE;
+
+    MethodDesc* pMD = LoadTypicalMethodDefinition();
+
+    // TODO: USG: Implement logic
+    return TRUE;
 }
 
 //*******************************************************************************

@@ -421,7 +421,7 @@ PCODE MethodDesc::PrepareILBasedCode(PrepareCodeConfig* pConfig)
 #ifdef FEATURE_READYTORUN // && USG
         // Call from a universal canonical code to a universal canonical callee that doesn't have R2R code.
         // We can't JIT compile this method. Return null, and the caller should handle this case
-        if (pCode == NULL && HasClassOrMethodInstantiation() && IsTypicalMethodDefinition())
+        if (pCode == NULL && IsTypicalMethodDefinition() && RequiresConversionsForUniversalGenericCode())
             return NULL;
 #endif // FEATURE_READYTORUN
     }
@@ -477,10 +477,12 @@ PCODE MethodDesc::GetPrecompiledCode(PrepareCodeConfig* pConfig)
                     m_pszDebugMethodSignature,
                     GetMemberDef()));
 
-            if (!GetModule()->IsReadyToRun() || !GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
+            bool fIsUniversalCanonicalCode = GetModule()->IsReadyToRun() && GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode);
+            
+            if (!fIsUniversalCanonicalCode || !RequiresConversionsForUniversalGenericCode())
             {
-                // Do not set the method's entry point to this universal canonical entry point now, as this might require a
-                // calling convention conversion, depending on the caller's convention
+                // Do not set the method's entry point to this universal canonical entry point if it requires
+                // calling convention conversion.
                 pConfig->SetNativeCode(pCode, &pCode);
             }
         }
@@ -1150,6 +1152,14 @@ BOOL PrepareCodeConfig::SetNativeCode(PCODE pCode, PCODE * ppAlternateCodeToUse)
 {
     LIMITED_METHOD_CONTRACT;
 
+    bool fIsUniversalCanonicalCode = m_pMethodDesc->GetModule()->IsReadyToRun() && 
+        m_pMethodDesc->GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode);
+
+    // We should never set raw canonical entrypoints if they could require a calling convention conversion
+
+    _ASSERTE(!fIsUniversalCanonicalCode || !m_pMethodDesc->RequiresConversionsForUniversalGenericCode());
+
+
     // If this function had already been requested for rejit (before its original
     // code was jitted), then give the CodeVersionManager a chance to jump-stamp the
     // code we just compiled so the first thread entering the function will jump
@@ -1798,7 +1808,11 @@ extern "C" PCODE STDCALL PreStubWorker(TransitionBlock * pTransitionBlock, Metho
 
     if (strcmp(pMD->GetModule()->GetSimpleName(), "console") == 0)
     {
-        printf("\033[0;31m  PRESTUB  %s::%s\n\033[0m", pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName);
+        printf("\033[0;31m  PRESTUB  %s%s%s::%s\n\033[0m",
+            (pMD->IsUnboxingStub() ? "[UNBOX] " : ""),
+            (pMD->IsInstantiatingStub() ? "[INST] " : ""),
+            pMD->m_pszDebugClassName,
+            pMD->m_pszDebugMethodName);
     }
 
     CONSISTENCY_CHECK(GetAppDomain()->CheckCanExecuteManagedCode(pMD));
@@ -1930,7 +1944,7 @@ PCODE HandleUniversalCanonicalEntryPoint(PCODE pCode, MethodDesc* pPrestubMethod
 
     if (fIsUSGPrestubMethod)
     {
-        if (!fIsUSGEntryPoint)
+        if (!fIsUSGEntryPoint && pPrestubMethod->RequiresConversionsForUniversalGenericCode())
         {
             // pCode is a jitted method, or non-USG readytorun code, so we need to convert
             // to the standard convention first
@@ -1946,13 +1960,15 @@ PCODE HandleUniversalCanonicalEntryPoint(PCODE pCode, MethodDesc* pPrestubMethod
     }
     else
     {
-        if (fIsUSGEntryPoint)
+        bool fNeedToInsertInstantiationArgument = pPrestubMethod->MethodShapeRequiresInstArgOnSharedGenericCode() && !pPrestubMethod->RequiresInstArg();
+
+        if (fIsUSGEntryPoint && (fNeedToInsertInstantiationArgument || pPrestubMethod->RequiresConversionsForUniversalGenericCode()))
         {
             // These two methods should be the same here
             _ASSERTE(pPrestubMethod == pNonUniversalCanonicalMethod);
 
             // TODO: USG: CONVERT_STANDARD_TO_GENERIC_INSTANTIATING and delete MakeInstantiatingStubForUniversalGenericTarget
-            if (pPrestubMethod->MethodShapeRequiresInstArgOnSharedGenericCode() && !pPrestubMethod->RequiresInstArg())
+            if (fNeedToInsertInstantiationArgument)
             {
                 // To use USG, we need to use an instantiating stub. If the input method does not require an instantiating stub,
                 // this means it does not share generic code, but since we're going to use a USG codegen, we need to insert a generic
@@ -2122,12 +2138,17 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
                 if (HasMethodInstantiation())
                 {
                     //pMethodForCallCounting = (MethodDesc*)pMethodFrame->GetParamTypeArg();
-                    pMethodForCallCounting = (MethodDesc*)pMethodFrame->GetArgumentRegisters()->RCX;
+                    pMethodForCallCounting = IsStatic() ?
+                        (MethodDesc*)pMethodFrame->GetArgumentRegisters()->RCX :
+                        (MethodDesc*)pMethodFrame->GetArgumentRegisters()->RCX;
                 }
                 else
                 {
                     //MethodTable* pContextMT = (MethodTable*)pMethodFrame->GetParamTypeArg();
-                    MethodTable* pContextMT = (MethodTable*)pMethodFrame->GetArgumentRegisters()->RCX;
+                    MethodTable* pContextMT = IsStatic() ?
+                        (MethodTable*)pMethodFrame->GetArgumentRegisters()->RCX :
+                        (MethodTable*)pMethodFrame->GetArgumentRegisters()->RDX;
+
                     // TODO: USG: Need to call GetMethodTableMatchingParentClass? Assert for now...
                     _ASSERTE(pContextMT->HasSameTypeDefAs(this->GetMethodTable()));
                     pMethodForCallCounting = pContextMT->GetParallelMethodDesc(this);

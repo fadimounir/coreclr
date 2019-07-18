@@ -597,6 +597,8 @@ public:
 
     BOOL MethodShapeRequiresInstArgOnSharedGenericCode();
 
+    BOOL RequiresConversionsForUniversalGenericCode();
+
     // Can this method handle be given out to reflection for use in a MethodInfo
     // object?
     BOOL IsRuntimeMethodHandle();

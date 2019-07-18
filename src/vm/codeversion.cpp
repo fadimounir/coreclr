@@ -2437,13 +2437,16 @@ HRESULT CodeVersionManager::PublishNativeCodeVersion(MethodDesc* pMethod, Native
             }
             else
             {
-                if (pMethod->GetModule()->IsReadyToRun() && pMethod->GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode))
+                bool fIsUniversalGenericCode = pMethod->GetModule()->IsReadyToRun() && pMethod->GetModule()->GetReadyToRunInfo()->IsUniversalCanonicalEntryPoint(pCode);
+
+                // We cannot set raw universal canonical entry points here if they could require a calling convention conversion
+                if(!fIsUniversalGenericCode || !pMethod->RequiresConversionsForUniversalGenericCode())
                 {
-                    pMethod->ResetCodeEntryPoint();
+                    pMethod->SetCodeEntryPoint(pCode);
                 }
                 else
                 {
-                    pMethod->SetCodeEntryPoint(pCode);
+                    pMethod->ResetCodeEntryPoint();
                 }
             }
         }
