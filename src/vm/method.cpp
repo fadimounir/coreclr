@@ -1709,20 +1709,25 @@ BOOL MethodDesc::MethodShapeRequiresInstArgOnSharedGenericCode()
 
 BOOL MethodDesc::RequiresConversionsForUniversalGenericCode()
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-    }
-    CONTRACTL_END
+    //CONTRACTL
+    //{
+    //    THROWS;
+    //    GC_TRIGGERS;
+    //}
+    //CONTRACTL_END
         
     if (!HasClassOrMethodInstantiation())
         return FALSE;
 
-    MethodDesc* pMD = LoadTypicalMethodDefinition();
+    // TEMP
+    if (MethodShapeRequiresInstArgOnSharedGenericCode())
+        return TRUE;
+
+    //MethodDesc* pMD = LoadTypicalMethodDefinition();
 
     // TODO: USG: Implement logic
-    return TRUE;
+    return FALSE;
+    //return TRUE;
 }
 
 //*******************************************************************************

@@ -8055,6 +8055,7 @@ MethodDesc* MethodTable::GetMethodDescForSlotAddress(PCODE addr, BOOL fSpeculati
     MethodDesc* pMethodDesc = ExecutionManager::GetCodeMethodDesc(addr);
     if (NULL != pMethodDesc)
     {
+        if typical, search by token RID on introduced method descs
         goto lExit;
     }
 
