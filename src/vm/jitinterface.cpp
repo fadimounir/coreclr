@@ -12921,6 +12921,15 @@ PCODE UnsafeJitFunction(NativeCodeVersion nativeCodeVersion, COR_ILMETHOD_DECODE
     // method attributes and signature are consistant
     _ASSERTE(!!ftn->IsStatic() == ((methodInfo.args.callConv & CORINFO_CALLCONV_HASTHIS) == 0));
 
+    if (ftn->IsDynamicMethod())
+    {
+        DynamicMethodDesc* pDynamicMD = (DynamicMethodDesc*)ftn;
+        if (pDynamicMD->GetILStubResolver()->GetStubType() == ILStubResolver::ILStubType::CallConverterStub)
+        {
+            flags.Set(CORJIT_FLAGS::CORJIT_FLAG_MIN_OPT);
+        }
+    }
+
     flags = GetCompileFlags(ftn, flags, &methodInfo);
 
 #ifdef _DEBUG

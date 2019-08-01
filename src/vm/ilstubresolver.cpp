@@ -88,6 +88,8 @@ LPCUTF8 ILStubResolver::GetStubMethodName()
         case InstantiatingStub:      return "IL_STUB_InstantiatingStub";
         case SecureDelegateStub:     return "IL_STUB_SecureDelegate_Invoke";
 #endif
+        case CallConverterStub:      return "IL_STUB_CallConverter";
+
         default:
             UNREACHABLE_MSG("Unknown stub type");
     }
@@ -244,6 +246,11 @@ void ILStubResolver::SetStubType(ILStubType stubType)
     m_type = stubType;
 }
 
+ILStubResolver::ILStubType ILStubResolver::GetStubType()
+{
+    LIMITED_METHOD_CONTRACT;
+    return m_type;
+}
 void ILStubResolver::SetStubMethodDesc(MethodDesc* pStubMD)
 {
     LIMITED_METHOD_CONTRACT;

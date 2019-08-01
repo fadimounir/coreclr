@@ -70,7 +70,6 @@ public:
 
     static void StubGenFailed(ILStubResolver* pResolver);
 
-protected:    
     enum ILStubType
     {
         Unassigned = 0,
@@ -91,8 +90,12 @@ protected:
         UnboxingILStub,
         InstantiatingStub,
 #endif
+        CallConverterStub,
     };
 
+    ILStubType GetStubType();
+
+protected:
     enum CompileTimeStatePtrSpecialValues
     {
         ILNotYetGenerated   = NULL,

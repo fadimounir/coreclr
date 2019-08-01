@@ -2532,7 +2532,7 @@ class DynamicMethodDesc : public StoredSigMethodDesc
     friend class NativeImageDumper;
 #endif
 
-protected:
+public:
     RelativePointer<PTR_CUTF8>           m_pszMethodName;
     PTR_DynamicResolver m_pResolver;
 

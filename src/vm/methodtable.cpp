@@ -8051,6 +8051,12 @@ MethodDesc* MethodTable::GetMethodDescForSlotAddress(PCODE addr, BOOL fSpeculati
     MethodDesc* pMethodDesc = ExecutionManager::GetCodeMethodDesc(addr);
     if (NULL != pMethodDesc)
     {
+        if (pMethodDesc->IsDynamicMethod())
+        {
+            DynamicMethodDesc* pDynamicMD = (DynamicMethodDesc*)pMethodDesc;
+            if (pDynamicMD->GetILStubResolver()->GetStubType() == ILStubResolver::ILStubType::CallConverterStub)
+                pMethodDesc = pDynamicMD->GetILStubResolver()->GetStubTargetMethodDesc();
+        }
         goto lExit;
     }
 

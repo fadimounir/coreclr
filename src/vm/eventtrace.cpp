@@ -31,6 +31,7 @@
 #include "ex.h"
 #include "dbginterface.h"
 #include "finalizerthread.h"
+#include "typestring.h"
 
 #define Win32EventWrite EventWrite
 
@@ -6288,6 +6289,11 @@ VOID ETW::MethodLog::SendMethodJitStartEvent(MethodDesc *pMethodDesc, SString *n
             methodSignature = &tMethodSignature;
         }
 
+        if (pMethodDesc->HasMethodInstantiation())
+        {
+            TypeString::AppendInst(*methodName, pMethodDesc->GetMethodInstantiation());
+        }
+
         // fire method information
         /* prepare events args for ETW and ETM */
         szDtraceOutput1 = (PCWSTR)namespaceOrClassName->GetUnicode();
@@ -6461,6 +6467,10 @@ VOID ETW::MethodLog::SendMethodEvent(MethodDesc *pMethodDesc, DWORD dwEventOptio
             namespaceOrClassName = &tNamespace; 
             methodName = &tMethodName;
             methodSignature = &tMethodSignature;
+        }
+        if (pMethodDesc->HasMethodInstantiation())
+        {
+            TypeString::AppendInst(*methodName, pMethodDesc->GetMethodInstantiation());
         }
         pNamespaceName = (PWCHAR)namespaceOrClassName->GetUnicode();
         pMethodName = (PWCHAR)methodName->GetUnicode();

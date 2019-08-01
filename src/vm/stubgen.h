@@ -484,7 +484,7 @@ private:
 
     static ILCodeStream* FindLastCodeStream(ILCodeStream* pList);
 
-protected:
+public:
     //
     // the public entrypoints for these methods are in ILCodeStream
     //

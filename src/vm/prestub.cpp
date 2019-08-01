@@ -23,6 +23,7 @@
 #include "compile.h"
 #include "ecall.h"
 #include "virtualcallstub.h"
+#include "typestring.h"
 
 #ifdef FEATURE_PREJIT
 #include "compile.h"
@@ -306,6 +307,308 @@ void DACNotifyCompilationFinished(MethodDesc *methodDesc, PCODE pCode)
 #pragma optimize("", on)
 #endif
 // </TODO>
+
+//#pragma optimize("", off)
+bool SignatureNeedsConverter(SigPointer& pSig, Module* pSigModule)
+{
+    CorElementType typ = ELEMENT_TYPE_END;
+
+    pSig.GetElemType(&typ);
+
+    switch (typ)
+    {
+    default:
+        pSig.SkipExactlyOne();
+        break;
+
+    case ELEMENT_TYPE_VAR:
+    case ELEMENT_TYPE_MVAR:
+        return true;
+
+    case ELEMENT_TYPE_GENERICINST:
+        {
+            pSig.PeekElemType(&typ);
+            pSig.SkipExactlyOne();
+
+            ULONG argCnt = 0;
+            pSig.GetData(&argCnt);
+
+            while (argCnt--)
+            {
+                if (typ == ELEMENT_TYPE_VALUETYPE)
+                {
+                    if (SignatureNeedsConverter(pSig, pSigModule))
+                        return true;
+                }
+                else
+                {
+                    pSig.SkipExactlyOne();
+                }
+            }
+        }
+        break;
+    }
+
+    return false;
+}
+
+bool SignatureNeedsConverter(MethodDesc* pMD)
+{
+    MetaSig msig(pMD);
+
+    SigPointer pReturn = msig.GetReturnProps();
+    if (SignatureNeedsConverter(pReturn, pMD->GetModule()))
+        return true;
+
+    msig.NextArg();
+    SigPointer pArgs = msig.GetArgProps();
+    for (unsigned i = 0; i < msig.NumFixedArgs(); i++)
+    {
+        if (SignatureNeedsConverter(pArgs, pMD->GetModule()))
+            return true;
+    }
+
+    return false;
+}
+
+void CreateStandardToGenericILStubTargetSig(MethodDesc* pMD, SigBuilder* stubSigBuilder)
+{
+    STANDARD_VM_CONTRACT;
+
+    SigTypeContext typeContext = SigTypeContext(pMD);
+
+    MetaSig msig(pMD);
+    BYTE callingConvention = IMAGE_CEE_CS_CALLCONV_DEFAULT;
+    if (msig.HasThis())
+        callingConvention |= IMAGE_CEE_CS_CALLCONV_HASTHIS;
+    // CallingConvention
+    stubSigBuilder->AppendByte(callingConvention);
+
+    bool returnByRef = (msig.GetReturnType() != ELEMENT_TYPE_VOID);
+
+    // ParamCount
+    stubSigBuilder->AppendData(msig.NumFixedArgs() + 1 + (returnByRef ? 1 : 0));
+
+    // Return type
+    stubSigBuilder->AppendElementType(ELEMENT_TYPE_VOID);
+
+    // The hidden context parameter
+    stubSigBuilder->AppendElementType(ELEMENT_TYPE_I);
+
+    if (returnByRef)
+    {
+        SigPointer pReturn = msig.GetReturnProps();
+        stubSigBuilder->AppendElementType(ELEMENT_TYPE_BYREF);
+        pReturn.ConvertToInternalExactlyOne(msig.GetModule(), &typeContext, stubSigBuilder);
+    }
+
+    // Copy rest of the arguments
+    msig.NextArg();
+    SigPointer pArgs = msig.GetArgProps();
+    for (unsigned i = 0; i < msig.NumFixedArgs(); i++)
+    {
+        stubSigBuilder->AppendElementType(ELEMENT_TYPE_BYREF);
+        pArgs.ConvertToInternalExactlyOne(msig.GetModule(), &typeContext, stubSigBuilder);
+    }
+}
+
+void CreateNoopILStubTargetSig(MethodDesc* pMD, SigBuilder* stubSigBuilder)
+{
+    STANDARD_VM_CONTRACT;
+
+    SigTypeContext typeContext = SigTypeContext(pMD);
+
+    MetaSig msig(pMD);
+    BYTE callingConvention = IMAGE_CEE_CS_CALLCONV_DEFAULT;
+    if (msig.HasThis())
+        callingConvention |= IMAGE_CEE_CS_CALLCONV_HASTHIS;
+    // CallingConvention
+    stubSigBuilder->AppendByte(callingConvention);
+
+    // ParamCount
+    stubSigBuilder->AppendData(msig.NumFixedArgs()); // +1 is for context param
+
+    // Return type
+    SigPointer pReturn = msig.GetReturnProps();
+    pReturn.ConvertToInternalExactlyOne(msig.GetModule(), &typeContext, stubSigBuilder);
+
+    // Copy rest of the arguments
+    msig.NextArg();
+    SigPointer pArgs = msig.GetArgProps();
+    for (unsigned i = 0; i < msig.NumFixedArgs(); i++)
+    {
+        pArgs.ConvertToInternalExactlyOne(msig.GetModule(), &typeContext, stubSigBuilder);
+    }
+}
+
+PCODE CreateCallingConventionConverterILStub(MethodDesc* pTargetMD, PCODE pCodeTarget)
+{
+    static int needsConv = 0;
+    static int total = 0;
+    total++;
+
+    SigTypeContext typeContext = SigTypeContext(pTargetMD);
+
+    MetaSig msig(pTargetMD);
+
+    SString name;
+
+    // LOG
+    {
+        //SString tNamespace, tMethodName, tMethodSignature;
+        //pTargetMD->GetMethodInfo(tNamespace, tMethodName, tMethodSignature);
+
+        if (!SignatureNeedsConverter(pTargetMD))
+        {
+            /*name.AppendUTF8("CONVERTER NOT NEEDED : ");
+            name.Append(tMethodSignature);
+            name.AppendUTF8("         METHOD = ");
+            name.Append(tNamespace);
+            name.AppendUTF8("::");
+            name.Append(tMethodName);
+            StackScratchBuffer buff;
+            printf("(Needs: %d. Total: %d) | %s\n", needsConv, total, name.GetUTF8(buff));*/
+            return pCodeTarget;
+        }
+        else
+        {
+            needsConv++;
+
+            /*name.AppendUTF8("NEEDS CONVERTER      : ");
+            name.Append(tMethodSignature);
+            name.AppendUTF8("         METHOD = ");
+            name.Append(tNamespace);
+            name.AppendUTF8("::");
+            name.Append(tMethodName);
+            StackScratchBuffer buff;
+            printf("(Needs: %d. Total: %d) | %s\n", needsConv, total, name.GetUTF8(buff));*/
+        }
+    }
+
+    ILStubLinker sl(pTargetMD->GetModule(),
+        pTargetMD->GetSignature(),
+        &typeContext,
+        pTargetMD,
+        msig.HasThis(), // fTargetHasThis
+        msig.HasThis(), // fStubHasThis
+        FALSE           // fIsNDirectStub
+    );
+
+    ILCodeStream* pCode = sl.NewCodeStream(ILStubLinker::kDispatch);
+
+    //pCode->EmitBREAK();
+
+    if (msig.HasThis())
+        pCode->EmitLoadThis();
+
+    for (unsigned i = 0; i < msig.NumFixedArgs(); i++)
+        pCode->EmitLDARG(i);
+
+    pCode->EmitLDC(pCodeTarget);
+    pCode->EmitCALLI(TOKEN_ILSTUB_TARGET_SIG, msig.NumFixedArgs(), (msig.IsReturnTypeVoid() ? 0 : 1));
+    pCode->EmitRET();
+
+
+    DWORD cbSig;
+    PCCOR_SIGNATURE pSig;
+    pTargetMD->GetSig(&pSig, &cbSig);
+    MethodDesc* pStubMD = ILStubCache::CreateAndLinkNewILStubMethodDesc(
+        pTargetMD->GetLoaderAllocator(),
+        pTargetMD->GetMethodTable(),
+        ILSTUB_CALLCONVERTER,
+        pTargetMD->GetModule(),
+        pSig, cbSig,
+        &typeContext,
+        &sl);
+
+    ILStubResolver* pResolver = pStubMD->AsDynamicMethodDesc()->GetILStubResolver();
+
+    DWORD cbTargetSig = 0;
+    SigBuilder stubSigBuilder;
+    CreateNoopILStubTargetSig(pTargetMD, &stubSigBuilder);
+    PCCOR_SIGNATURE pTargetSig = (PCCOR_SIGNATURE)stubSigBuilder.GetSignature(&cbTargetSig);
+    pResolver->SetStubTargetMethodSig(pTargetSig, cbTargetSig);
+    pResolver->SetStubTargetMethodDesc(pTargetMD);
+
+
+
+    //============================= USG =============================//
+#if 0
+    // 1. Build the new signature
+    DWORD cbTargetSig = 0;
+    SigBuilder stubSigBuilder;
+    CreateStandardToGenericILStubTargetSig(pTargetMD, &stubSigBuilder);
+    PCCOR_SIGNATURE pTargetSig = (PCCOR_SIGNATURE)stubSigBuilder.GetSignature(&cbTargetSig);
+
+    // 2. Emit the method body
+    pCode->EmitLDC((TADDR)pTargetMD);
+    //pCode->EmitLDTOKEN(pCode->GetToken(pTargetMD));
+
+    DWORD retValLocalNum = -1;
+    if (msig.GetReturnType() != ELEMENT_TYPE_VOID)
+    {
+        LocalDesc retVar;
+        sl.GetStubReturnType(&retVar);
+        //retVar.ElementType[retVar.cbType++] = ELEMENT_TYPE_BYREF;
+        retValLocalNum = sl.NewLocal(retVar);
+        pCode->EmitLDLOCA(retValLocalNum);
+    }
+
+
+    if (msig.HasThis())
+    {
+        // 2.1 Push the thisptr
+        pCode->EmitLoadThis();
+    }
+
+    // 2.2 Push the rest of the arguments for x86
+    for (unsigned i = 0; i < msig.NumFixedArgs(); i++)
+    {
+        pCode->EmitLDARGA(i);
+    }
+
+    pCode->EmitLDC((TADDR)pTargetMD->GetMultiCallableAddrOfCode(CORINFO_ACCESS_ANY));
+    pCode->EmitCALLI(TOKEN_ILSTUB_TARGET_SIG, msig.NumFixedArgs() + 1 + (msig.IsReturnTypeVoid() ? 0 : 1), 0);
+
+    if (msig.GetReturnType() != ELEMENT_TYPE_VOID)
+        pCode->EmitLDLOC(retValLocalNum);
+
+    pCode->EmitRET();
+
+
+    PCCOR_SIGNATURE pSig;
+    DWORD cbSig;
+    pTargetMD->GetSig(&pSig, &cbSig);
+    MethodDesc* pStubMD = ILStubCache::CreateAndLinkNewILStubMethodDesc(
+        pTargetMD->GetLoaderAllocator(),
+        pTargetMD->GetMethodTable(),
+        ILSTUB_CALLCONVERTER,
+        pTargetMD->GetModule(),
+        pSig, cbSig,
+        &typeContext,
+        &sl);
+
+    ILStubResolver* pResolver = pStubMD->AsDynamicMethodDesc()->GetILStubResolver();
+
+    /*SString stubMethodName;
+    stubMethodName.AppendUTF8(pResolver->GetStubMethodName());
+    stubMethodName.AppendUTF8("_StdToGen_");
+    TypeString::AppendType(stubMethodName, TypeHandle(pTargetMD->GetMethodTable()));
+    stubMethodName.AppendUTF8("::");
+    stubMethodName.AppendUTF8(pTargetMD->GetName());
+
+    StackScratchBuffer buff;
+    ((DynamicMethodDesc*)pStubMD)->m_pszMethodName.SetValue(stubMethodName.GetUTF8(buff));*/
+
+    pResolver->SetStubTargetMethodSig(pTargetSig, cbTargetSig);
+    pResolver->SetStubTargetMethodDesc(pTargetMD);
+#endif
+
+    PCODE pStubCode = JitILStub(pStubMD);
+
+    return pStubCode;
+}
+
 
 PCODE MethodDesc::PrepareInitialCode()
 {
@@ -998,6 +1301,11 @@ PCODE MethodDesc::JitCompileCodeLocked(PrepareCodeConfig* pConfig, JitListLockEn
     }
 
     _ASSERTE(pCode != NULL);
+
+    if (HasClassOrMethodInstantiation() && !IsDynamicMethod())
+    {
+        pCode = CreateCallingConventionConverterILStub(this, pCode);
+    }
 
 #ifdef HAVE_GCCOVER
     // Instrument for coverage before trying to publish this version

@@ -288,6 +288,12 @@ MethodDesc* ILStubCache::CreateNewMethodDesc(LoaderHeap* pCreationHeap, MethodTa
         }
     }
 
+    if (dwStubFlags & ILSTUB_CALLCONVERTER)
+    {
+        pMD->GetILStubResolver()->SetStubType(ILStubResolver::CallConverterStub);
+    }
+
+
 // if we made it this far, we can set a more descriptive stub name
 #ifdef FEATURE_ARRAYSTUB_AS_IL
     if (SF_IsArrayOpStub(dwStubFlags))
