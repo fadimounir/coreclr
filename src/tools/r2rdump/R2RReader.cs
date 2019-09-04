@@ -475,7 +475,7 @@ namespace R2RDump
                 uint methodFlags = decoder.ReadUInt();
                 if ((methodFlags & (uint)ReadyToRunMethodSigFlags.READYTORUN_METHOD_SIG_OwnerType) != 0)
                 {
-                    mdReader = decoder.GetMetadataReadyerFromModuleOverride();
+                    mdReader = decoder.GetMetadataReaderFromModuleOverride();
                     owningType = decoder.ReadTypeSignatureNoEmit();
                 }
                 if ((methodFlags & (uint)ReadyToRunMethodSigFlags.READYTORUN_METHOD_SIG_SlotInsteadOfToken) != 0)

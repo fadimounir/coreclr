@@ -1078,7 +1078,7 @@ namespace R2RDump
             }
         }
 
-        public MetadataReader GetMetadataReadyerFromModuleOverride()
+        public MetadataReader GetMetadataReaderFromModuleOverride()
         {
             if (PeekElementType() == CorElementType.ELEMENT_TYPE_MODULE_ZAPSIG)
             {
