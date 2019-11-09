@@ -136,12 +136,10 @@ namespace ILCompiler
             protected override MethodILData CreateValueFromKey(MethodDesc key)
             {
                 MethodIL methodIL = ILProvider.GetMethodIL(key);
-                if (methodIL == null
-                    && key.IsPInvoke
-                    && _compilationModuleGroup.GeneratesPInvoke(key))
+                if (methodIL == null && key.IsPInvoke)
                 {
-                    // TODO: enable when IL Stubs are fixed to be non-shared
-                    // methodIL = PInvokeILEmitter.EmitIL(key);
+                    if (_compilationModuleGroup.GeneratesPInvoke(key))
+                        methodIL = PInvokeILEmitter.EmitIL(key);
                 }
 
                 return new MethodILData() { Method = key, MethodIL = methodIL };

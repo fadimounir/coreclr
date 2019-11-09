@@ -9,6 +9,7 @@ using Internal.TypeSystem.Interop;
 using Internal.JitInterface;
 
 using Debug = System.Diagnostics.Debug;
+using ILCompiler;
 
 namespace Internal.IL.Stubs
 {
@@ -26,48 +27,7 @@ namespace Internal.IL.Stubs
             Debug.Assert(targetMethod.IsPInvoke);
             _targetMethod = targetMethod;
             _importMetadata = targetMethod.GetPInvokeMethodMetadata();
-
-            _marshallers = InitializeMarshallers(targetMethod, _importMetadata.Flags);
-        }
-
-        private static Marshaller[] InitializeMarshallers(MethodDesc targetMethod, PInvokeFlags flags)
-        {
-            MarshalDirection direction = MarshalDirection.Forward;
-            MethodSignature methodSig = targetMethod.Signature;
-
-            ParameterMetadata[] parameterMetadataArray = targetMethod.GetParameterMetadata();
-            Marshaller[] marshallers = new Marshaller[methodSig.Length + 1];
-            int parameterIndex = 0;
-            ParameterMetadata parameterMetadata;
-
-            for (int i = 0; i < marshallers.Length; i++)
-            {
-                Debug.Assert(parameterIndex == parameterMetadataArray.Length || i <= parameterMetadataArray[parameterIndex].Index);
-                if (parameterIndex == parameterMetadataArray.Length || i < parameterMetadataArray[parameterIndex].Index)
-                {
-                    // if we don't have metadata for the parameter, create a dummy one
-                    parameterMetadata = new ParameterMetadata(i, ParameterMetadataAttributes.None, null);
-                }
-                else 
-                {
-                    Debug.Assert(i == parameterMetadataArray[parameterIndex].Index);
-                    parameterMetadata = parameterMetadataArray[parameterIndex++];
-                }
-                TypeDesc parameterType = (i == 0) ? methodSig.ReturnType : methodSig[i - 1];  //first item is the return type
-                marshallers[i] = Marshaller.CreateMarshaller(parameterType,
-                                                    MarshallerType.Argument,
-                                                    parameterMetadata.MarshalAsDescriptor,
-                                                    direction,
-                                                    marshallers,
-                                                    parameterMetadata.Index,
-                                                    flags,
-                                                    parameterMetadata.In,
-                                                    parameterMetadata.Out,
-                                                    parameterMetadata.Return
-                                                    );
-            }
-
-            return marshallers;
+            _marshallers = Marshaller.GetMarshallersForMethod(targetMethod);
         }
 
         private void EmitPInvokeCall(PInvokeILCodeStreams ilCodeStreams)
@@ -128,7 +88,7 @@ namespace Internal.IL.Stubs
             _marshallers[0].LoadReturnValue(unmarshallingCodestream);
             unmarshallingCodestream.Emit(ILOpcode.ret);
 
-            return new PInvokeILStubMethodIL((ILStubMethodIL)emitter.Link(_targetMethod), IsStubRequired());
+            return new PInvokeILStubMethodIL((ILStubMethodIL)emitter.Link(_targetMethod));
         }
 
         public static MethodIL EmitIL(MethodDesc method)
@@ -146,31 +106,15 @@ namespace Internal.IL.Stubs
                 throw new RequiresRuntimeJitException(method);
             }
         }
-
-        private bool IsStubRequired()
-        {
-            Debug.Assert(_targetMethod.IsPInvoke);
-
-            if (_importMetadata.Flags.SetLastError)
-            {
-                return true;
-            }
-
-            for (int i = 0; i < _marshallers.Length; i++)
-            {
-                if (_marshallers[i].IsMarshallingRequired())
-                    return true;
-            }
-            return false;
-        }
     }
 
     public sealed class PInvokeILStubMethodIL : ILStubMethodIL
     {
-        public bool IsStubRequired { get; }
-        public PInvokeILStubMethodIL(ILStubMethodIL methodIL, bool isStubRequired) : base(methodIL)
+        public bool IsCustomMarshallingRequired { get; }
+
+        public PInvokeILStubMethodIL(ILStubMethodIL methodIL) : base(methodIL)
         {
-            IsStubRequired = isStubRequired;
+            IsCustomMarshallingRequired = Marshaller.IsCustomMarshallingRequired(methodIL.OwningMethod);
         }
     }
 }

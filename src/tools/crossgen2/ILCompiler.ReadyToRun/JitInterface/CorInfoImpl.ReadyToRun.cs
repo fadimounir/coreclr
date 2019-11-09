@@ -11,6 +11,7 @@ using System.Reflection.Metadata.Ecma335;
 using System.Runtime.InteropServices;
 
 using Internal.IL;
+using Internal.IL.Stubs;
 using Internal.Text;
 using Internal.TypeSystem;
 using Internal.TypeSystem.Ecma;
@@ -1960,12 +1961,21 @@ namespace Internal.JitInterface
                     return false;
                 }
 
-                return ((IL.Stubs.PInvokeILStubMethodIL)_compilation.GetMethodIL(method))?.IsStubRequired ?? false;
+                MethodIL stubIL = _compilation.GetMethodIL(method);
+                if (stubIL == null)
+                {
+                    // This is the case of a PInvoke method that requires custom marshallers, but we can't
+                    // compile it because the core library is not part of the version bubble.
+                    Debug.Assert(!_compilation.NodeFactory.CompilationModuleGroup.GeneratesPInvoke(method));
+                    return true;
+                }
+
+                return ((PInvokeILStubMethodIL)stubIL).IsCustomMarshallingRequired;
             }
             else
             {
                 var sig = (MethodSignature)HandleToObject((IntPtr)callSiteSig->pSig);
-                return SignatureRequiresMarshaling(sig);
+                return Marshaller.IsCustomMarshallingRequired(sig, Array.Empty<ParameterMetadata>());
             }
         }
 
@@ -1979,86 +1989,6 @@ namespace Internal.JitInterface
             // If we answer "true" here, RyuJIT is going to ask for the cookie and for the CORINFO_HELP_PINVOKE_CALLI
             // helper. The helper doesn't exist in ReadyToRun, so let's just throw right here.
             throw new RequiresRuntimeJitException($"{MethodBeingCompiled} -> {nameof(canGetCookieForPInvokeCalliSig)}");
-        }
-
-        private bool MethodRequiresMarshaling(EcmaMethod method)
-        {
-            if (method.GetPInvokeMethodMetadata().Flags.SetLastError)
-            {
-                // SetLastError is handled by stub
-                return true;
-            }
-
-            if ((method.ImplAttributes & MethodImplAttributes.PreserveSig) == 0)
-            {
-                // HRESULT swapping is handled by stub
-                return true;
-            }
-
-            return SignatureRequiresMarshaling(method.Signature);
-        }
-
-        private bool SignatureRequiresMarshaling(MethodSignature sig)
-        {
-            if (TypeRequiresMarshaling(sig.ReturnType, isReturnType: true))
-            {
-                return true;
-            }
-
-            foreach (TypeDesc argType in sig)
-            {
-                if (TypeRequiresMarshaling(argType, isReturnType: false))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private bool TypeRequiresMarshaling(TypeDesc type, bool isReturnType)
-        {
-            switch (type.Category)
-            {
-                case TypeFlags.Pointer:
-                    // TODO: custom modifiers S(NeedsCopyConstructorModifier, IsCopyConstructed)
-                    break;
-
-                case TypeFlags.Enum:
-                    if (!_compilation.NodeFactory.CompilationModuleGroup.VersionsWithType(type))
-                    {
-                        return true;
-                    }
-                    break;
-
-                case TypeFlags.ValueType:
-                    if (!MarshalUtils.IsBlittableType(type))
-                    {
-                        return true;
-                    }
-                    if (!_compilation.NodeFactory.CompilationModuleGroup.VersionsWithType(type))
-                    {
-                        return true;
-                    }
-                    if (isReturnType && !type.IsPrimitive)
-                    {
-                        return true;
-                    }
-                    break;
-
-                case TypeFlags.Boolean:
-                case TypeFlags.Char:
-                    return true;
-
-                default:
-                    if (!type.IsPrimitive)
-                    {
-                        return true;
-                    }
-                    break;
-            }
-
-            return false;
         }
 
         private int SizeOfPInvokeTransitionFrame => ReadyToRunRuntimeConstants.READYTORUN_PInvokeTransitionFrameSizeInPointerUnits * _compilation.NodeFactory.Target.PointerSize;

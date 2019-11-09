@@ -7,7 +7,7 @@ using System.Collections.Generic;
 
 using Internal.TypeSystem;
 using Internal.TypeSystem.Ecma;
-
+using Internal.TypeSystem.Interop;
 using Debug = System.Diagnostics.Debug;
 
 namespace ILCompiler
@@ -191,8 +191,15 @@ namespace ILCompiler
             // We allow compiling them if both the module of the pinvoke and the core library
             // are in the version bubble.
             Debug.Assert(method is EcmaMethod);
-            return _versionBubbleModuleSet.Contains(((EcmaMethod)method).Module)
-                && _versionBubbleModuleSet.Contains(method.Context.SystemModule);
+            if (_versionBubbleModuleSet.Contains(((EcmaMethod)method).Module)
+                && _versionBubbleModuleSet.Contains(method.Context.SystemModule))
+            {
+                return true;
+            }
+
+            // If the core library is not in the version bubble, we can still compile PInvoke stubs
+            // if no marshalling is going to be required (simple signatures)
+            return !Marshaller.IsCustomMarshallingRequired(method);
         }
     }
 }
