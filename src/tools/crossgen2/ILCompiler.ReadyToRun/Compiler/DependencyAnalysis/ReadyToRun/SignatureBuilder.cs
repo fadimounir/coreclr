@@ -321,7 +321,7 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
             }
         }
 
-        private void EmitModuleOverride(EcmaModule module, SignatureContext context)
+        public void EmitModuleOverride(EcmaModule module, SignatureContext context)
         {
             if (module != context.LocalContext)
             {
@@ -329,12 +329,6 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                 uint moduleIndex = (uint)context.Resolver.GetModuleIndex(module);
                 EmitUInt(moduleIndex);
             }
-        }
-
-        private void EmitTypeToken(EcmaType type, SignatureContext context)
-        {
-            ModuleToken token = context.GetModuleTokenForType(type);
-            EmitToken(token.Token);
         }
 
         private void EmitInstantiatedTypeSignature(InstantiatedType type, SignatureContext context)

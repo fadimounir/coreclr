@@ -1853,6 +1853,11 @@ MethodDescChunk *MethodDescChunk::CreateChunk(LoaderHeap *pHeap, DWORD methodDes
     }
     CONTRACT_END;
 
+    if ((classification & mcNDirect) != 0)
+    {
+        int a = 0;
+    }
+
     SIZE_T oneSize = MethodDesc::GetBaseSize(classification);
 
     if (fNonVtableSlot)

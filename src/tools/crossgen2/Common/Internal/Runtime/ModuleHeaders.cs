@@ -59,10 +59,11 @@ namespace Internal.Runtime
         // 107 is deprecated - it was used by an older format of AvailableTypes
         AvailableTypes = 108,
         InstanceMethodEntryPoints = 109,
-        InliningInfo = 110, // Added in v2.1
-        ProfileDataInfo = 111, // Added in v2.2
-        ManifestMetadata = 112, // Added in v2.3
-        AttributePresence = 113, // Added in V3.1
+        InliningInfo = 110,        // Added in v2.1
+        ProfileDataInfo = 111,     // Added in v2.2
+        ManifestMetadata = 112,    // Added in v2.3
+        AttributePresence = 113,   // Added in V3.1
+        PInvokeILStubs = 114,      // Added in V4.2
 
         //
         // CoreRT ReadyToRun sections

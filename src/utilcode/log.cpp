@@ -57,6 +57,10 @@ VOID InitLogging()
     LogFlags |= REGUTIL::GetConfigFlag_DontUse_(CLRConfig::INTERNAL_LogToFile,     LOG_ENABLE_FILE_LOGGING);
     LogFlags |= REGUTIL::GetConfigFlag_DontUse_(CLRConfig::INTERNAL_LogToConsole,  LOG_ENABLE_CONSOLE_LOGGING);
 
+    //LogFlags |= LOG_ENABLE_CONSOLE_LOGGING | LOG_ENABLE;
+    //LogFacilityMask = LF_STUBS | LF_ALWAYS;
+    //LogVMLevel = LL_INFO1000;
+
     LogFacilityMask2 = REGUTIL::GetConfigDWORD_DontUse_(CLRConfig::INTERNAL_LogFacility2, LogFacilityMask2) | LF_ALWAYS;
 
     if (SUCCEEDED(szLogFileName.ReSizeNoThrow(MAX_LONGPATH)))

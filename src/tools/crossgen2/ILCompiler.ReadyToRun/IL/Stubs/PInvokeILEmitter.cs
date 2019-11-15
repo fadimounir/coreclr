@@ -3,6 +3,9 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Net;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 
 using Internal.TypeSystem;
 using Internal.TypeSystem.Interop;
@@ -18,6 +21,8 @@ namespace Internal.IL.Stubs
     /// </summary>
     public struct PInvokeILEmitter
     {
+        private static ConcurrentDictionary<MethodDesc, MethodIL> s_emittedPinvokeILStubs = new ConcurrentDictionary<MethodDesc, MethodIL>();
+
         private readonly MethodDesc _targetMethod;
         private readonly Marshaller[] _marshallers;
         private readonly PInvokeMetadata _importMetadata;
@@ -95,7 +100,14 @@ namespace Internal.IL.Stubs
         {
             try
             {
-                return new PInvokeILEmitter(method).EmitIL();
+                MethodIL methodIL;
+                if (!s_emittedPinvokeILStubs.TryGetValue(method, out methodIL))
+                {
+                    methodIL = new PInvokeILEmitter(method).EmitIL();
+                    s_emittedPinvokeILStubs.TryAdd(method, methodIL);
+                }
+
+                return methodIL;
             }
             catch (NotSupportedException)
             {

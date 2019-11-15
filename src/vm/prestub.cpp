@@ -355,6 +355,11 @@ PCODE MethodDesc::PrepareILBasedCode(PrepareCodeConfig* pConfig)
         // TODO: Remove IsSystem check when IL Stubs are fixed to be non-shared
         if (this->IsDynamicMethod() && MayUsePrecompiledILStub())
         {
+            if (!this->GetModule()->IsSystem())
+            {
+                int a = 0;
+            }
+
             DynamicMethodDesc *stubMethodDesc = this->AsDynamicMethodDesc();
             if (stubMethodDesc->IsILStub() && stubMethodDesc->IsPInvokeStub())
             {
@@ -365,6 +370,8 @@ PCODE MethodDesc::PrepareILBasedCode(PrepareCodeConfig* pConfig)
                     if (pTargetMD != NULL)
                     {
                         pCode = pTargetMD->GetPrecompiledR2RCode(pConfig);
+                        if (pCode != NULL)
+                            pCode = NULL;
                         if (pCode != NULL)
                         {
                             LOG((LF_ZAP, LL_INFO10000,
@@ -2013,6 +2020,10 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
     } // end else if (IsIL() || IsNoMetadata())
     else if (IsNDirect())
     {
+        if (!this->GetModule()->IsSystem())
+        {
+            int a = 0;
+        }
         pCode = GetStubForInteropMethod(this);
         GetOrCreatePrecode();
     }
